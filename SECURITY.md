@@ -32,4 +32,5 @@ signature.
 
 ### Verify the build provenance
 
-    gh attestation verify ghcr.io/p3l1/paperless-ngx-operator:<version>
+    gh attestation verify oci://ghcr.io/p3l1/paperless-ngx-operator:<version> \
+      --repo p3l1/paperless-ngx-operator
