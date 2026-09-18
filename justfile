@@ -77,7 +77,14 @@ generate:
 verify: generate
     #!/usr/bin/env bash
     set -euo pipefail
-    git diff --exit-code -- config {{chart}}
+    # --exit-code ignores untracked files, so it misses a CRD generated for the
+    # first time; status --porcelain sees new and uncommitted files alike.
+    changes=$(git status --porcelain -- config {{chart}})
+    if [ -n "$changes" ]; then
+        echo "generated output does not match what is committed:" >&2
+        echo "$changes" >&2
+        exit 1
+    fi
     v=$(awk '/^version:/ {print $2; exit}' {{chart}}/Chart.yaml)
     a=$(awk '/^appVersion:/ {gsub(/"/, "", $2); print $2; exit}' {{chart}}/Chart.yaml)
     if [ "$v" != "$a" ]; then
