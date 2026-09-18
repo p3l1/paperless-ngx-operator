@@ -28,8 +28,9 @@ setup:
     check k3d     "brew install k3d"
     check kubeconform "brew install kubeconform"
     [ "$missing" -eq 0 ] || { echo "install the tools above, then re-run just setup" >&2; exit 1; }
-    # syft is only needed by `just sbom`, so a warning rather than a failure.
+    # syft and helm-docs are only needed by their own single recipe, so a warning rather than a failure.
     command -v syft >/dev/null 2>&1 || echo "note: syft absent; just sbom will not work (brew install syft)" >&2
+    command -v helm-docs >/dev/null 2>&1 || echo "note: helm-docs absent; just docs will not work (brew install norwoodj/tap/helm-docs)" >&2
     install -m 0755 hack/commit-msg .git/hooks/commit-msg
     echo "all required tools present; commit-msg hook installed"
 
@@ -61,7 +62,7 @@ build:
 generate:
     #!/usr/bin/env bash
     set -euo pipefail
-    # Slice 0 has no api/ yet; controller-gen would fail on the missing path.
+    # controller-gen needs api/ to exist; without CRD types there is nothing to generate.
     if [ ! -d api ]; then
         echo "no api/ directory yet; nothing to generate"
         exit 0
