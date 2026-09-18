@@ -1,0 +1,22 @@
+# Security Policy
+
+## Supported versions
+
+The latest released minor version receives security fixes. Older versions do not.
+
+## Reporting a vulnerability
+
+Report privately through GitHub's advisory form:
+https://github.com/p3l1/paperless-ngx-operator/security/advisories/new
+
+Please do not open a public issue for a suspected vulnerability. Expect an
+acknowledgement within seven days.
+
+## What this project ships
+
+Every release publishes an SPDX SBOM, build provenance, and a keyless cosign
+signature. Verify an image with:
+
+    cosign verify ghcr.io/p3l1/paperless-ngx-operator:<version> \
+      --certificate-identity-regexp '^https://github.com/p3l1/paperless-ngx-operator/' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com
