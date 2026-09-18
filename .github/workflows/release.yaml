@@ -100,7 +100,7 @@ jobs:
           cosign attest --yes --type spdxjson \
             --predicate operator.sbom.spdx.json \
             "${IMAGE}@${{ steps.manifest.outputs.digest }}"
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.manifest.outputs.digest }}
