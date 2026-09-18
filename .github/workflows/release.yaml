@@ -8,6 +8,12 @@ env:
   IMAGE: ghcr.io/p3l1/paperless-ngx-operator
   CHART_REGISTRY: oci://ghcr.io/p3l1/charts
 
+# Without this, a bare "run:" step gets "bash -e {0}" — no pipefail, so a
+# failed "helm push" still lets its "tee" exit 0 and the digest parse yields empty.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   image:
     strategy:
@@ -85,6 +91,10 @@ jobs:
             -t "${IMAGE}:${version}" -t "${IMAGE}:latest" \
             $(printf "${IMAGE}@sha256:%s " *)
           digest=$(docker buildx imagetools inspect "${IMAGE}:${version}" --format '{{.Manifest.Digest}}')
+          if [ -z "$digest" ]; then
+            echo "::error::imagetools inspect returned no digest for ${IMAGE}:${version}; the manifest list was not created" >&2
+            exit 1
+          fi
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - uses: sigstore/cosign-installer@v3
@@ -128,6 +138,10 @@ jobs:
           helm package charts/paperless-ngx-operator --version "$version" --app-version "$version"
           helm push "paperless-ngx-operator-${version}.tgz" "${CHART_REGISTRY}" 2>&1 | tee push.log
           digest=$(awk '/Digest:/ {print $2}' push.log)
+          if [ -z "$digest" ]; then
+            echo "::error::no digest found in helm push output; the push likely failed (see log above)" >&2
+            exit 1
+          fi
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
       - name: Sign the chart
         run: |

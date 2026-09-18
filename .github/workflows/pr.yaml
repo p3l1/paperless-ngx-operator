@@ -12,6 +12,12 @@ concurrency:
   group: pr-${{ github.ref }}
   cancel-in-progress: true
 
+# Without this, a bare "run:" step gets "bash -e {0}" — no pipefail, so a
+# failure earlier in a pipe (e.g. inside a process substitution) is swallowed.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   commits:
     runs-on: ubuntu-latest
