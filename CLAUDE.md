@@ -10,7 +10,8 @@ CI runs:
 - `just check` — format, vet, lint, unit tests. Run after every change.
 - `just test` — envtest. Run before every commit.
 - `just e2e` — k3d, chart install, assertions. Run before opening a PR.
-- `just verify` — regenerate CRDs and fail if the result is uncommitted.
+- `just verify` — regenerate CRDs and fail if the result is uncommitted, or if
+  `Chart.yaml`'s `version` and `appVersion` diverge (release automation rewrites both).
 - `just --list` — everything else.
 
 ## Layout

@@ -8,6 +8,10 @@ Status: early development. Slice 0 (foundation) is complete; no custom resources
 
 ## Installation
 
+No release has been published yet: the release workflow only runs on a `v*` tag, and none
+has been cut. The command below is the intended interface and will work once a release
+exists; today it fails with an OCI "not found" error.
+
     helm install paperless-operator \
       oci://ghcr.io/p3l1/charts/paperless-ngx-operator \
       --namespace paperless-operator-system --create-namespace
@@ -18,7 +22,9 @@ the CRD schemas exceed the annotation size limit of client-side apply.
 
 ## Development
 
-Requires Go, Docker, helm, kubectl, k3d, kubeconform and syft in `PATH`.
+Requires Go, Docker, helm, kubectl, k3d and kubeconform in `PATH` — `just setup` fails if
+any of those six is missing. `syft` (needed only by `just sbom`) and `helm-docs` (needed
+only by `just docs`) get a warning instead, since nothing else depends on either.
 
     just setup        # verify tools, install the commit-msg hook
     just check        # fast: format, vet, lint, unit tests
