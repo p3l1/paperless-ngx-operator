@@ -4,12 +4,6 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
-
 env:
   IMAGE: ghcr.io/p3l1/paperless-ngx-operator
   CHART_REGISTRY: oci://ghcr.io/p3l1/charts
@@ -25,6 +19,9 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -59,6 +56,11 @@ jobs:
   publish:
     needs: image
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
     outputs:
       digest: ${{ steps.manifest.outputs.digest }}
     steps:
@@ -110,6 +112,10 @@ jobs:
   chart:
     needs: publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
