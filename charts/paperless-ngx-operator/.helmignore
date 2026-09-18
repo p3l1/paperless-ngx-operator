@@ -1,0 +1,4 @@
+.git/
+*.md
+# helm lint rejects .gitkeep's extension unless the loader skips it here.
+templates/crds/.gitkeep
