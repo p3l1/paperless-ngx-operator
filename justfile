@@ -102,12 +102,17 @@ docker-build:
 
 deploy: docker-build cluster-up
     k3d image import {{image}}:{{tag}} -c {{cluster}}
+    # The image tag never changes, so the pod template needs a per-deploy stamp:
+    # otherwise the Deployment is byte-identical and Kubernetes rolls nothing.
     helm upgrade --install paperless-operator {{chart}} \
         --kube-context k3d-{{cluster}} \
         --namespace paperless-operator-system --create-namespace \
         --set image.repository={{image}} --set image.tag={{tag}} \
         --set image.pullPolicy=IfNotPresent \
+        --set-string podAnnotations.deployedAt="$(date -u +%Y%m%dT%H%M%SZ)" \
         --wait --timeout 3m
+    kubectl --context k3d-{{cluster}} -n paperless-operator-system \
+        rollout status deployment/paperless-operator-paperless-ngx-operator --timeout 3m
 
 # Full tier: minutes, run before a PR and in CI.
 e2e: deploy
