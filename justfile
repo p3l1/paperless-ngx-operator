@@ -53,7 +53,9 @@ check: fmt vet lint
 test:
     #!/usr/bin/env bash
     set -euo pipefail
-    export KUBEBUILDER_ASSETS="$(go tool setup-envtest use {{envtest_k8s}} --bin-dir .envtest -p path)"
+    # --bin-dir must be absolute: go test runs the binary from the package dir, not
+    # here, so a relative "-p path" result would no longer resolve at that point.
+    export KUBEBUILDER_ASSETS="$(go tool setup-envtest use {{envtest_k8s}} --bin-dir {{justfile_directory()}}/.envtest -p path)"
     go test ./test/envtest/... -count=1
 
 build:
