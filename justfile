@@ -37,6 +37,17 @@ setup:
 fmt:
     go fmt ./...
 
+# Fails, without rewriting, on files go fmt would otherwise silently reformat.
+fmt-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unformatted=$(gofmt -l .)
+    if [ -n "$unformatted" ]; then
+        echo "not gofmt-ed (run: just fmt):" >&2
+        echo "$unformatted" >&2
+        exit 1
+    fi
+
 vet:
     go vet ./...
 
@@ -46,7 +57,7 @@ lint:
     helm template {{chart}} | kubeconform -strict -summary -
 
 # Fast tier: seconds, run on every change.
-check: fmt vet lint
+check: fmt-check vet lint
     go test ./internal/... ./cmd/...
 
 # Medium tier: envtest against a real API server, no cluster.
