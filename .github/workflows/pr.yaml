@@ -49,6 +49,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
       - uses: extractions/setup-just@v2
       - uses: azure/setup-helm@v4
@@ -66,6 +67,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
       - uses: extractions/setup-just@v2
       - run: just verify
@@ -77,6 +79,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
       - uses: extractions/setup-just@v2
       - run: just test
@@ -88,6 +91,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          check-latest: true
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   e2e:
@@ -97,6 +101,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          check-latest: true
           cache: true
       - uses: extractions/setup-just@v2
       - uses: azure/setup-helm@v4
