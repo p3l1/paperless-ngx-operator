@@ -15,8 +15,21 @@ acknowledgement within seven days.
 ## What this project ships
 
 Every release publishes an SPDX SBOM, build provenance, and a keyless cosign
-signature. Verify an image with:
+signature.
+
+### Verify the image signature
 
     cosign verify ghcr.io/p3l1/paperless-ngx-operator:<version> \
       --certificate-identity-regexp '^https://github.com/p3l1/paperless-ngx-operator/' \
       --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+### Verify the SBOM attestation
+
+    cosign verify-attestation --type spdxjson \
+      --certificate-identity-regexp '^https://github.com/p3l1/paperless-ngx-operator/' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      ghcr.io/p3l1/paperless-ngx-operator:<version>
+
+### Verify the build provenance
+
+    gh attestation verify ghcr.io/p3l1/paperless-ngx-operator:<version>
