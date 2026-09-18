@@ -3,6 +3,12 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release, e.g. v0.2.0 (release-please creates the tag; this only builds and publishes it)"
+        required: true
+        type: string
 
 env:
   IMAGE: ghcr.io/p3l1/paperless-ngx-operator
@@ -15,7 +21,33 @@ defaults:
     shell: bash
 
 jobs:
+  # Resolves the tag once so both trigger kinds agree on what "the release" is:
+  # github.ref_name is the pushed tag on a tag push, but the dispatching branch
+  # on workflow_dispatch, where only the input names the tag to release.
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      - name: Resolve release tag
+        id: resolve
+        run: |
+          tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          {
+            echo "tag=${tag}"
+            echo "version=${tag#v}"
+            echo "sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
   image:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -30,6 +62,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -45,8 +79,8 @@ jobs:
           provenance: false
           sbom: false
           build-args: |
-            VERSION=${{ github.ref_name }}
-            COMMIT=${{ github.sha }}
+            VERSION=${{ needs.prepare.outputs.tag }}
+            COMMIT=${{ needs.prepare.outputs.sha }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         run: |
@@ -60,7 +94,7 @@ jobs:
           retention-days: 1
 
   publish:
-    needs: image
+    needs: [prepare, image]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -71,6 +105,8 @@ jobs:
       digest: ${{ steps.manifest.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
@@ -85,7 +121,7 @@ jobs:
       - name: Create manifest list
         id: manifest
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${{ needs.prepare.outputs.version }}"
           cd /tmp/digests
           docker buildx imagetools create \
             -t "${IMAGE}:${version}" -t "${IMAGE}:latest" \
@@ -117,10 +153,11 @@ jobs:
           push-to-registry: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
           files: operator.sbom.spdx.json
 
   chart:
-    needs: publish
+    needs: [prepare, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -128,12 +165,14 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - uses: azure/setup-helm@v4
       - uses: sigstore/cosign-installer@v3
       - name: Package and push
         id: push
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${{ needs.prepare.outputs.version }}"
           helm registry login ghcr.io -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
           helm package charts/paperless-ngx-operator --version "$version" --app-version "$version"
           helm push "paperless-ngx-operator-${version}.tgz" "${CHART_REGISTRY}" 2>&1 | tee push.log

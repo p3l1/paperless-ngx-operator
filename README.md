@@ -8,9 +8,9 @@ Status: early development. Slice 0 (foundation) is complete; no custom resources
 
 ## Installation
 
-No release has been published yet: the release workflow only runs on a `v*` tag, and none
-has been cut. The command below is the intended interface and will work once a release
-exists; today it fails with an OCI "not found" error.
+No release has been published yet: the release workflow (see [Releasing](#releasing)) has
+never been dispatched. The command below is the intended interface and will work once a
+release exists; today it fails with an OCI "not found" error.
 
     helm install paperless-operator \
       oci://ghcr.io/p3l1/charts/paperless-ngx-operator \
@@ -19,6 +19,18 @@ exists; today it fails with an OCI "not found" error.
 The chart uses no `lookup`, no random values and no hooks, so it renders identically under
 ArgoCD, Flux or plain `helm install`. ArgoCD users should set `ServerSideApply=true`, because
 the CRD schemas exceed the annotation size limit of client-side apply.
+
+## Releasing
+
+Cutting a release is two steps, because release-please can push a tag but, using the default
+`GITHUB_TOKEN`, cannot trigger another workflow from that push:
+
+1. Merge the open release-please PR on `main`. This creates the `vX.Y.Z` tag and a GitHub
+   Release, but builds nothing yet.
+2. Dispatch the `release` workflow for that tag: `Actions` → `release` → `Run workflow`, with
+   the `tag` input set to the tag from step 1 (e.g. `v0.2.0`) — or equivalently
+   `gh workflow run release.yaml -f tag=v0.2.0`. This builds and pushes the image, chart, SBOM,
+   signatures and provenance for that exact tag.
 
 ## Development
 
