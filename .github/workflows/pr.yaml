@@ -50,7 +50,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - uses: azure/setup-helm@v4
       - name: Install chart tooling
         run: |
@@ -67,7 +67,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - run: just verify
 
   test:
@@ -78,7 +78,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - run: just test
 
   govulncheck:
@@ -98,7 +98,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - uses: azure/setup-helm@v4
       - name: Install k3d
         run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.8.3 bash
