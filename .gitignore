@@ -1,0 +1,6 @@
+bin/
+dist/
+*.sbom.json
+cover.out
+.envtest/
+.superpowers/
