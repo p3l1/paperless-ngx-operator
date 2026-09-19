@@ -51,9 +51,10 @@ func secretEnvVar(name, secretName, key string) corev1.EnvVar {
 }
 
 // DatabaseEnv returns the PAPERLESS_DB* environment variables Paperless needs to reach
-// its database. PAPERLESS_DBENGINE is always "postgresql": leaving it unset makes
-// Paperless fall back to SQLite silently, which is never the right behavior for either
-// branch below.
+// its database, branching on whether it is managed or external.
+//
+// PAPERLESS_DBENGINE is always "postgresql": leaving it unset makes Paperless fall back
+// to SQLite silently, which is wrong for both branches.
 func DatabaseEnv(inst *v1alpha1.PaperlessInstance) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{Name: "PAPERLESS_DBENGINE", Value: "postgresql"},

@@ -64,6 +64,15 @@ func TestDatabaseEnvManagedPointsAtCNPGService(t *testing.T) {
 	if got := envValue(t, env, "PAPERLESS_DBHOST"); got != wantHost {
 		t.Errorf("PAPERLESS_DBHOST = %q, want %q", got, wantHost)
 	}
+	// Literal values, not the package's own constants: a typo'd port or database name
+	// would otherwise round-trip against itself and every test in the package would
+	// still pass, while Paperless connects to the wrong port or the wrong database.
+	if got := envValue(t, env, "PAPERLESS_DBPORT"); got != "5432" {
+		t.Errorf("PAPERLESS_DBPORT = %q, want %q", got, "5432")
+	}
+	if got := envValue(t, env, "PAPERLESS_DBNAME"); got != "paperless" {
+		t.Errorf("PAPERLESS_DBNAME = %q, want %q", got, "paperless")
+	}
 
 	wantSecret := DBName(inst) + "-app"
 	if secretName, key := envSecretRef(t, env, "PAPERLESS_DBUSER"); secretName != wantSecret || key != "username" {
@@ -125,6 +134,11 @@ func TestDatabaseEnvBothSetPrefersExternal(t *testing.T) {
 	if got := envValue(t, env, "PAPERLESS_DBHOST"); got != "pg.example.org" {
 		t.Errorf("PAPERLESS_DBHOST = %q, want the external host %q", got, "pg.example.org")
 	}
+	// A bug that only switched DBHOST while still wiring credentials to the CNPG-generated
+	// secret would pass the assertion above alone, so pin the credentials source too.
+	if secretName, key := envSecretRef(t, env, "PAPERLESS_DBUSER"); secretName != "external-db-creds" || key != "username" {
+		t.Errorf("PAPERLESS_DBUSER = secret %q key %q, want secret %q key %q", secretName, key, "external-db-creds", "username")
+	}
 }
 
 func TestCNPGClusterSetsInstancesAndBootstrapDatabase(t *testing.T) {
@@ -144,12 +158,15 @@ func TestCNPGClusterSetsInstancesAndBootstrapDatabase(t *testing.T) {
 		t.Errorf("spec.instances = %d, want 3", got)
 	}
 
+	// The literal "paperless" is asserted rather than the managedDatabaseName constant:
+	// a regression that changes the constant everywhere it's used must still fail here,
+	// since Paperless would then silently connect to a database that exists but isn't its own.
 	db, found, err := unstructured.NestedString(obj.Object, "spec", "bootstrap", "initdb", "database")
 	if err != nil || !found {
 		t.Fatalf("spec.bootstrap.initdb.database: found=%v err=%v", found, err)
 	}
-	if db == "" {
-		t.Error("spec.bootstrap.initdb.database is empty")
+	if db != "paperless" {
+		t.Errorf("spec.bootstrap.initdb.database = %q, want %q", db, "paperless")
 	}
 
 	if got, want := obj.GetAPIVersion(), "postgresql.cnpg.io/v1"; got != want {
@@ -177,8 +194,8 @@ func TestCNPGClusterDefaultsInstancesWhenUnset(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("spec.instances: found=%v err=%v", found, err)
 	}
-	if got < 1 {
-		t.Errorf("spec.instances = %d, want at least 1", got)
+	if got != 1 {
+		t.Errorf("spec.instances = %d, want 1", got)
 	}
 }
 

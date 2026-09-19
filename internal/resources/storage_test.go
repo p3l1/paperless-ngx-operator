@@ -93,14 +93,17 @@ func TestPVCSizes(t *testing.T) {
 	}
 }
 
-// A PersistentVolumeClaim without at least one access mode is rejected outright by the
-// API server, so an empty spec.storage.<volume>.accessModes must not be passed through as-is.
+// An empty spec.storage.<volume>.accessModes can't pass through as-is: the API server
+// rejects a PVC with none at all.
+//
+// The exact value matters too: defaulting to ReadWriteMany would silently change
+// provisioning behavior for every user who never set an access mode.
 func TestPVCAccessModesDefaultToReadWriteOnce(t *testing.T) {
 	inst := instance()
 
 	for _, p := range PVCs(inst) {
-		if len(p.Spec.AccessModes) == 0 {
-			t.Errorf("%s: AccessModes is empty, want a default", p.Name)
+		if len(p.Spec.AccessModes) != 1 || p.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+			t.Errorf("%s: AccessModes = %v, want [ReadWriteOnce]", p.Name, p.Spec.AccessModes)
 		}
 	}
 }

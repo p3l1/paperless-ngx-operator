@@ -138,8 +138,8 @@ func TestValkeyPVCShape(t *testing.T) {
 	if got, want := p.Name, ValkeyName(inst); got != want {
 		t.Errorf("name = %q, want %q", got, want)
 	}
-	if len(p.Spec.AccessModes) == 0 {
-		t.Error("AccessModes is empty")
+	if len(p.Spec.AccessModes) != 1 || p.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+		t.Errorf("AccessModes = %v, want [ReadWriteOnce]", p.Spec.AccessModes)
 	}
 	if p.Spec.StorageClassName != nil {
 		t.Errorf("StorageClassName = %q, want nil: cache storage has no per-instance class field", *p.Spec.StorageClassName)
