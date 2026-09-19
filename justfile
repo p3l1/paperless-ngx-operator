@@ -107,7 +107,7 @@ verify: generate
     set -euo pipefail
     # --exit-code ignores untracked files, so it misses a CRD generated for the
     # first time; status --porcelain sees new and uncommitted files alike.
-    changes=$(git status --porcelain -- config {{chart}})
+    changes=$(git status --porcelain -- config {{chart}} api)
     if [ -n "$changes" ]; then
         echo "generated output does not match what is committed:" >&2
         echo "$changes" >&2
