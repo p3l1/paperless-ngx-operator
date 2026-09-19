@@ -10,13 +10,12 @@ one creates a full Paperless-NGX deployment, with its database managed by
 
 ## Installation
 
-No release has been published yet: the release workflow (see [Releasing](#releasing)) has
-never been dispatched. The command below is the intended interface and will work once a
-release exists; today it fails with an OCI "not found" error.
-
     helm install paperless-operator \
-      oci://ghcr.io/p3l1/charts/paperless-ngx-operator \
+      oci://ghcr.io/p3l1/charts/paperless-ngx-operator --version 0.2.0 \
       --namespace paperless-operator-system --create-namespace
+
+The image and chart are published for `linux/amd64` and `linux/arm64`, signed with keyless
+cosign, and carry an SPDX SBOM and build provenance. `SECURITY.md` shows how to verify them.
 
 The chart uses no `lookup`, no random values and no hooks, so it renders identically under
 ArgoCD, Flux or plain `helm install`. ArgoCD users should set `ServerSideApply=true`, because
@@ -49,6 +48,19 @@ deleted; switching the field back and forth on an existing instance takes effect
 reconcile, not just on creation.
 
 ## Releasing
+
+Four commit types publish, and the rest are silent:
+
+| Type | Effect |
+| --- | --- |
+| `feat`, `feature` | minor version |
+| `fix`, `perf`, `revert` | patch version |
+| `docs`, `style`, `chore`, `refactor`, `test`, `build`, `ci` | nothing, and absent from the changelog |
+| any type with `!` or a `BREAKING CHANGE:` footer | major version |
+
+So a repair to CI or tooling is `ci` or `build`, never `fix` — otherwise a release is cut
+whose entire content is changes users never run. The same applies to a pull request title,
+which becomes the commit message on merge.
 
 Merge the open release-please PR on `main`. That creates the `vX.Y.Z` tag and a GitHub
 Release, and the same job then dispatches the `release` workflow for that tag, which builds
