@@ -33,8 +33,41 @@ const paperlessPort = 8000
 // with the four volumes' default ReadWriteOnce access mode.
 var paperlessReplicas = int32(1)
 
+// A fresh instance's first start runs a database migration that can take minutes.
+// Readiness tolerates ~5 minutes before the Service routes to the pod; liveness
+// tolerates longer still, so a slow migration is never mistaken for a hang.
+const (
+	readinessInitialDelaySeconds int32 = 10
+	readinessPeriodSeconds       int32 = 10
+	readinessTimeoutSeconds      int32 = 5
+	readinessFailureThreshold    int32 = 30
+
+	livenessInitialDelaySeconds int32 = 60
+	livenessPeriodSeconds       int32 = 20
+	livenessTimeoutSeconds      int32 = 5
+	livenessFailureThreshold    int32 = 30
+)
+
 func workloadLabels(inst *v1alpha1.PaperlessInstance) map[string]string {
 	return commonLabels(inst, "server")
+}
+
+// paperlessProbe is an HTTP GET against "/": Paperless redirects there once serving,
+// and httpGet treats any 2xx/3xx as success. Assumed, not verified against a running
+// image — if a pod never reaches Ready, check this path first.
+func paperlessProbe(initialDelay, period, timeout, failureThreshold int32) *corev1.Probe {
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: "/",
+				Port: intstr.FromInt32(paperlessPort),
+			},
+		},
+		InitialDelaySeconds: initialDelay,
+		PeriodSeconds:       period,
+		TimeoutSeconds:      timeout,
+		FailureThreshold:    failureThreshold,
+	}
 }
 
 // serviceDNSNames returns the Host header values a request arrives with when it comes
@@ -231,6 +264,14 @@ func Deployment(inst *v1alpha1.PaperlessInstance) *appsv1.Deployment {
 							EnvFrom:      inst.Spec.EnvFrom,
 							Resources:    inst.Spec.Resources,
 							VolumeMounts: paperlessVolumeMounts(inst),
+							ReadinessProbe: paperlessProbe(
+								readinessInitialDelaySeconds, readinessPeriodSeconds,
+								readinessTimeoutSeconds, readinessFailureThreshold,
+							),
+							LivenessProbe: paperlessProbe(
+								livenessInitialDelaySeconds, livenessPeriodSeconds,
+								livenessTimeoutSeconds, livenessFailureThreshold,
+							),
 						},
 					},
 					Volumes: paperlessVolumes(inst),

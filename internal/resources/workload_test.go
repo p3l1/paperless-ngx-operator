@@ -500,6 +500,60 @@ func TestDeploymentAndServiceCarryLabelsAndNamespace(t *testing.T) {
 	}
 }
 
+// Readiness must be generous: a fresh instance runs database migrations before it
+// starts answering, and a probe that gives up too early flaps the pod forever.
+func TestDeploymentReadinessProbeIsHTTPGetOnRootAtContainerPort(t *testing.T) {
+	inst := instance()
+
+	c := Deployment(inst).Spec.Template.Spec.Containers[0]
+	p := c.ReadinessProbe
+	if p == nil {
+		t.Fatal("ReadinessProbe is nil")
+	}
+	if p.HTTPGet == nil {
+		t.Fatal("ReadinessProbe.HTTPGet is nil")
+	}
+	if p.HTTPGet.Path != "/" {
+		t.Errorf("ReadinessProbe path = %q, want %q", p.HTTPGet.Path, "/")
+	}
+	if p.HTTPGet.Port.IntValue() != paperlessPort {
+		t.Errorf("ReadinessProbe port = %v, want %d", p.HTTPGet.Port, paperlessPort)
+	}
+}
+
+func TestDeploymentLivenessProbeIsHTTPGetOnRootAtContainerPort(t *testing.T) {
+	inst := instance()
+
+	c := Deployment(inst).Spec.Template.Spec.Containers[0]
+	p := c.LivenessProbe
+	if p == nil {
+		t.Fatal("LivenessProbe is nil")
+	}
+	if p.HTTPGet == nil {
+		t.Fatal("LivenessProbe.HTTPGet is nil")
+	}
+	if p.HTTPGet.Path != "/" {
+		t.Errorf("LivenessProbe path = %q, want %q", p.HTTPGet.Path, "/")
+	}
+	if p.HTTPGet.Port.IntValue() != paperlessPort {
+		t.Errorf("LivenessProbe port = %v, want %d", p.HTTPGet.Port, paperlessPort)
+	}
+}
+
+// Restarting a container mid-migration is worse than a slow-to-appear Service
+// endpoint, so liveness must tolerate a longer stretch of failure than readiness.
+func TestDeploymentLivenessProbeIsMorePatientThanReadiness(t *testing.T) {
+	inst := instance()
+
+	c := Deployment(inst).Spec.Template.Spec.Containers[0]
+	readinessWindow := c.ReadinessProbe.InitialDelaySeconds + c.ReadinessProbe.FailureThreshold*c.ReadinessProbe.PeriodSeconds
+	livenessWindow := c.LivenessProbe.InitialDelaySeconds + c.LivenessProbe.FailureThreshold*c.LivenessProbe.PeriodSeconds
+
+	if livenessWindow <= readinessWindow {
+		t.Errorf("liveness window = %ds, want it greater than the readiness window %ds", livenessWindow, readinessWindow)
+	}
+}
+
 func TestDeploymentResourcesFromSpec(t *testing.T) {
 	inst := instance()
 	inst.Spec.Resources = corev1.ResourceRequirements{
