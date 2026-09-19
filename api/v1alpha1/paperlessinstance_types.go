@@ -62,6 +62,17 @@ func (i ImageSpec) Reference() string {
 	return repo + ":" + i.Tag
 }
 
+// Default volume sizes. Each must match its field's "+kubebuilder:default={size:"…"}"
+// marker below; TestVolumeSizeDefaultsMatchMarkers fails if the two drift apart, since
+// a kubebuilder marker cannot reference a Go identifier and so cannot enforce it itself.
+const (
+	DefaultDataSize     = "5Gi"
+	DefaultMediaSize    = "20Gi"
+	DefaultConsumeSize  = "5Gi"
+	DefaultExportSize   = "10Gi"
+	DefaultDatabaseSize = "10Gi"
+)
+
 // VolumeSpec describes one persistent volume claim.
 type VolumeSpec struct {
 	// Size is the storage capacity requested for the claim.
@@ -76,6 +87,19 @@ type VolumeSpec struct {
 	// AccessModes the claim requests; the storage class's default applies when unset.
 	// +optional
 	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+}
+
+// SizeOrDefault returns Size, or fallback parsed as a resource.Quantity when Size is
+// the zero quantity. A typed Go client always sends Size as zero rather than omitting
+// it (encoding/json never omits a zero-value struct), and a zero-size PVC is never a
+// legitimate request — the API server rejects it outright — so resolving the fallback
+// here, rather than at each call site, is the one place every builder should read a
+// volume's size through instead of touching Size directly.
+func (v VolumeSpec) SizeOrDefault(fallback string) resource.Quantity {
+	if v.Size.IsZero() {
+		return resource.MustParse(fallback)
+	}
+	return v.Size
 }
 
 // StorageSpec groups the four volumes Paperless uses. Sizes are set per volume,
