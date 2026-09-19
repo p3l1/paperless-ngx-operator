@@ -40,6 +40,14 @@ Until CloudNativePG is installed, the instance reports `Ready=False` with a reas
 that as the blocker, and reconciles again automatically once it is. An instance can instead
 point at an already-running database via `spec.database.external`.
 
+By default, `kubectl delete` on a `PaperlessInstance` does not delete your documents: the four
+PersistentVolumeClaims, the CloudNativePG database and the generated secrets all survive, and
+a new instance created with the same name adopts them. Everything else — the Deployment,
+Service, and the Valkey cache — is removed. Set `spec.deletionPolicy: Delete` to remove
+everything instead, including your documents and database, the next time the instance is
+deleted; switching the field back and forth on an existing instance takes effect on the next
+reconcile, not just on creation.
+
 ## Releasing
 
 Cutting a release is two steps, because release-please can push a tag but, using the default
