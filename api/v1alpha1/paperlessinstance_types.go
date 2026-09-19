@@ -363,6 +363,13 @@ type PaperlessInstance struct {
 	Status PaperlessInstanceStatus `json:"status,omitempty"`
 }
 
+// GetConditions returns a pointer to the status conditions slice, letting a
+// shared condition-setting helper mutate it in place. A later CRD in this
+// operator can implement the same method to reuse that helper unchanged.
+func (in *PaperlessInstance) GetConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
 // +kubebuilder:object:root=true
 
 // PaperlessInstanceList contains a list of PaperlessInstance.
