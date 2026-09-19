@@ -50,6 +50,11 @@ reconcile, not just on creation.
 
 ## Releasing
 
+Version bumps follow commit types: `feat` raises the minor version, `fix` the patch, and
+everything else raises nothing. A repair to CI or tooling is therefore `ci` or `build`, not
+`fix` — otherwise a release is cut whose entire content is changes users never run.
+
+
 Merge the open release-please PR on `main`. That creates the `vX.Y.Z` tag and a GitHub
 Release, and the same job then dispatches the `release` workflow for that tag, which builds
 and pushes the image, chart, SBOM, signatures and provenance.
