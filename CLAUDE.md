@@ -18,16 +18,22 @@ CI runs:
 
 - `cmd/main.go` — process entry point; wires flags into `manager.Config` and starts the
   controller-runtime manager.
+- `api/v1alpha1/` — custom resource types (`PaperlessInstance`) and their generated
+  deepcopy code.
+- `internal/controller/` — reconcilers, one per kind.
+- `internal/resources/` — builders for the Kubernetes objects a reconciler applies
+  (Deployments, Services, PVCs, Secrets, the CloudNativePG Cluster).
 - `internal/manager/` — manager assembly (`Config`, `ControllerOptions`) and the
   leader-election ID.
 - `internal/version/` — build metadata (`version.String()`), stamped in by `-ldflags` at
   build time.
 - `charts/paperless-ngx-operator/` — the chart users install. Generated CRDs land in
   `templates/crds/` via `just generate`.
+- `examples/` — sample custom resources referenced from the README.
 - `test/envtest/`, `test/e2e/` — the medium and full verification tiers.
-
-`api/v1alpha1/` (CRD types), `internal/controller/` (reconcilers) and `internal/resources/`
-(object builders) do not exist yet; slice 1 adds them once the first custom resource lands.
+- `test/envtestenv/` — the importable envtest harness (`Start`). Controller tests live
+  beside their controller under `internal/controller/` and run in the medium tier
+  (`just test`), calling this package rather than duplicating it.
 
 ## Conventions
 

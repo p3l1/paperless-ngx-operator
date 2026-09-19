@@ -44,3 +44,21 @@ func TestControllerOptionsSchemeKnowsCoreTypes(t *testing.T) {
 		t.Error("scheme does not recognise core/v1 Secret")
 	}
 }
+
+// TestControllerOptionsDisablesTheSecretCache guards against the client
+// lazily starting a cluster-wide Secret informer: the reconciler only ever
+// Gets two Secrets by name, so caching every Secret in the cluster in the
+// operator's own memory is unnecessary exposure, not a performance choice.
+func TestControllerOptionsDisablesTheSecretCache(t *testing.T) {
+	opts := ControllerOptions(Config{})
+
+	if opts.Client.Cache == nil {
+		t.Fatal("Client.Cache is nil, want Secret excluded from caching")
+	}
+	for _, obj := range opts.Client.Cache.DisableFor {
+		if _, ok := obj.(*corev1.Secret); ok {
+			return
+		}
+	}
+	t.Error("Client.Cache.DisableFor does not exclude corev1.Secret")
+}

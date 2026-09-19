@@ -1,7 +1,11 @@
 name: pr
 
 on:
+  # edited is not a default type, so a corrected PR title would otherwise never
+  # re-run the check that rejected it. Only the commits job reacts to it; the
+  # rest guard on the action, since a title change touches no code.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -55,6 +59,7 @@ jobs:
             || { echo "::error::PR title is not a Conventional Commit: $TITLE"; exit 1; }
 
   check:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -73,6 +78,7 @@ jobs:
       - run: just check
 
   verify:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -85,6 +91,7 @@ jobs:
       - run: just verify
 
   test:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -97,6 +104,7 @@ jobs:
       - run: just test
 
   govulncheck:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -107,6 +115,7 @@ jobs:
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   e2e:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

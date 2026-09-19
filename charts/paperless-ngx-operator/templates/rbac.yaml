@@ -6,12 +6,99 @@ metadata:
   labels:
     {{- include "paperless-ngx-operator.labels" . | nindent 4 }}
 rules:
-  - apiGroups: [""]
-    resources: [events]
-    verbs: [create, patch]
+  # BEGIN GENERATED — rewritten by `just generate` from config/rbac/role.yaml; do not edit by hand.
   - apiGroups: [coordination.k8s.io]
     resources: [leases]
     verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups:
+    - ""
+    resources:
+    - events
+    verbs:
+    - create
+    - patch
+  - apiGroups:
+    - ""
+    resources:
+    - persistentvolumeclaims
+    - services
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - secrets
+    verbs:
+    - create
+    - delete
+    - get
+    - patch
+    - update
+  - apiGroups:
+    - apiextensions.k8s.io
+    resources:
+    - customresourcedefinitions
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+  - apiGroups:
+    - paperless.p3l1.de
+    resources:
+    - paperlessinstances
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+  - apiGroups:
+    - paperless.p3l1.de
+    resources:
+    - paperlessinstances/finalizers
+    verbs:
+    - update
+  - apiGroups:
+    - paperless.p3l1.de
+    resources:
+    - paperlessinstances/status
+    verbs:
+    - get
+    - patch
+    - update
+  - apiGroups:
+    - postgresql.cnpg.io
+    resources:
+    - clusters
+    verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+  # END GENERATED
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

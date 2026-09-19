@@ -4,11 +4,15 @@
 package manager
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	"github.com/p3l1/paperless-ngx-operator/api/v1alpha1"
 )
 
 // Changing this splits an upgrading operator into two active leaders.
@@ -23,9 +27,16 @@ type Config struct {
 func ControllerOptions(c Config) ctrl.Options {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 
 	return ctrl.Options{
-		Scheme:                 scheme,
+		Scheme: scheme,
+		// The operator only ever Gets two Secrets per instance by name; without
+		// this, the cache-backed client lazily starts a cluster-wide Secret
+		// informer and holds every Secret in the cluster in its own memory.
+		Client: client.Options{
+			Cache: &client.CacheOptions{DisableFor: []client.Object{&corev1.Secret{}}},
+		},
 		Metrics:                metricsserver.Options{BindAddress: c.MetricsAddress},
 		HealthProbeBindAddress: c.ProbeAddress,
 		LeaderElection:         c.LeaderElection,

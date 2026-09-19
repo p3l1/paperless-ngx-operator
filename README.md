@@ -4,7 +4,9 @@ A Kubernetes operator managing the lifecycle of [Paperless-NGX](https://docs.pap
 instances: creation, e-mail integration, backup to S3 or a PVC, restore, and periodic proof
 that a backup can actually be restored.
 
-Status: early development. Slice 0 (foundation) is complete; no custom resources exist yet.
+Status: early development. The `PaperlessInstance` custom resource is available: applying
+one creates a full Paperless-NGX deployment, with its database managed by
+[CloudNativePG](https://cloudnative-pg.io) by default.
 
 ## Installation
 
@@ -19,6 +21,32 @@ release exists; today it fails with an OCI "not found" error.
 The chart uses no `lookup`, no random values and no hooks, so it renders identically under
 ArgoCD, Flux or plain `helm install`. ArgoCD users should set `ServerSideApply=true`, because
 the CRD schemas exceed the annotation size limit of client-side apply.
+
+## Usage
+
+A `PaperlessInstance` describes one Paperless-NGX deployment: image, storage, and how it
+reaches its database and cache. The default configuration manages both with
+[CloudNativePG](https://cloudnative-pg.io) and a bundled Valkey, so install CloudNativePG
+first:
+
+    kubectl apply --server-side -f \
+      https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-1.28.0.yaml
+
+Then apply an instance, for example [`examples/paperlessinstance-minimal.yaml`](examples/paperlessinstance-minimal.yaml):
+
+    kubectl apply -f examples/paperlessinstance-minimal.yaml
+
+Until CloudNativePG is installed, the instance reports `Ready=False` with a reason naming
+that as the blocker, and reconciles again automatically once it is. An instance can instead
+point at an already-running database via `spec.database.external`.
+
+By default, `kubectl delete` on a `PaperlessInstance` does not delete your documents: the four
+PersistentVolumeClaims, the CloudNativePG database and the generated secrets all survive, and
+a new instance created with the same name adopts them. Everything else — the Deployment,
+Service, and the Valkey cache — is removed. Set `spec.deletionPolicy: Delete` to remove
+everything instead, including your documents and database, the next time the instance is
+deleted; switching the field back and forth on an existing instance takes effect on the next
+reconcile, not just on creation.
 
 ## Releasing
 

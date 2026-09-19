@@ -6,6 +6,7 @@ cluster := "paperless-operator"
 k3s_image := "rancher/k3s:v1.36.4-k3s1"
 envtest_k8s := "1.37.0"
 chart := "charts/paperless-ngx-operator"
+cnpg_version := "1.28.0"
 
 default:
     @just --list
@@ -54,11 +55,17 @@ vet:
 lint:
     go tool golangci-lint run ./...
     helm lint {{chart}}
-    helm template {{chart}} | kubeconform -strict -summary -
+    # kubeconform's default schema catalog has no schema for the CRD kind itself
+    # (only for the custom resources it defines), so that kind is skipped here.
+    helm template {{chart}} | kubeconform -strict -summary -skip CustomResourceDefinition -
 
 # Fast tier: seconds, run on every change.
 check: fmt-check vet lint
-    go test ./internal/... ./cmd/...
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # internal/controller needs a real API server (see `test`); excluded here so
+    # this fast tier never depends on KUBEBUILDER_ASSETS being set.
+    go test $(go list ./api/... ./internal/... ./cmd/... | grep -v '/internal/controller$')
 
 # Medium tier: envtest against a real API server, no cluster.
 test:
@@ -67,7 +74,13 @@ test:
     # --bin-dir must be absolute: go test runs the binary from the package dir, not
     # here, so a relative "-p path" result would no longer resolve at that point.
     export KUBEBUILDER_ASSETS="$(go tool setup-envtest use {{envtest_k8s}} --bin-dir {{justfile_directory()}}/.envtest -p path)"
-    go test ./test/envtest/... -count=1
+    pkgs="./test/envtest/..."
+    # internal/controller lands with the first reconciler; go test errors on a
+    # package path that does not exist yet, so only add it once it does.
+    if [ -d internal/controller ]; then
+        pkgs="$pkgs ./internal/controller/..."
+    fi
+    go test $pkgs -count=1
 
 build:
     go build -ldflags "-s -w -X github.com/p3l1/paperless-ngx-operator/internal/version.Version={{tag}} -X github.com/p3l1/paperless-ngx-operator/internal/version.Commit=$(git rev-parse --short HEAD)" -o bin/manager ./cmd
@@ -82,7 +95,23 @@ generate:
     fi
     go tool controller-gen object:headerFile=hack/boilerplate.go.txt paths=./api/...
     go tool controller-gen crd paths=./api/... output:crd:artifacts:config=config/crd/bases
-    cp config/crd/bases/*.yaml {{chart}}/templates/crds/
+    for f in config/crd/bases/*.yaml; do
+        sh hack/crd-to-template.sh "$f" "{{chart}}/templates/crds/$(basename "$f")"
+    done
+    # internal/controller lands with the first reconciler (see `test`); until then
+    # there are no RBAC markers, and the manager keeps only its static leases rule.
+    if [ -d internal/controller ]; then
+        go tool controller-gen rbac:roleName=manager-role paths=./internal/controller/... output:rbac:artifacts:config=config/rbac
+        # controller-gen exits 0 and writes nothing when it finds no +kubebuilder:rbac
+        # markers at package level (a common cause: the comment block sits directly
+        # above a func with no blank line, so it is discarded as that func's godoc).
+        if [ ! -s config/rbac/role.yaml ]; then
+            echo "internal/controller exists but controller-gen produced no RBAC rules" >&2
+            echo "(check +kubebuilder:rbac marker placement — see hack/rbac-to-chart.sh)" >&2
+            exit 1
+        fi
+    fi
+    sh hack/rbac-to-chart.sh config/rbac/role.yaml {{chart}}/templates/rbac.yaml
 
 # Fails when generated output is not committed, or the two chart versions drift.
 verify: generate
@@ -90,7 +119,7 @@ verify: generate
     set -euo pipefail
     # --exit-code ignores untracked files, so it misses a CRD generated for the
     # first time; status --porcelain sees new and uncommitted files alike.
-    changes=$(git status --porcelain -- config {{chart}})
+    changes=$(git status --porcelain -- config {{chart}} api)
     if [ -n "$changes" ]; then
         echo "generated output does not match what is committed:" >&2
         echo "$changes" >&2
@@ -111,6 +140,12 @@ cluster-up:
         k3d cluster create {{cluster}} --image {{k3s_image}} --agents 0 --wait
     fi
     kubectl --context k3d-{{cluster}} cluster-info
+    if ! kubectl --context k3d-{{cluster}} get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+        kubectl --context k3d-{{cluster}} apply --server-side -f \
+            "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-{{cnpg_version}}.yaml"
+        kubectl --context k3d-{{cluster}} -n cnpg-system wait --for=condition=Available \
+            deployment/cnpg-controller-manager --timeout 3m
+    fi
 
 cluster-down:
     k3d cluster delete {{cluster}} || true
@@ -132,9 +167,11 @@ deploy: docker-build cluster-up
     kubectl --context k3d-{{cluster}} -n paperless-operator-system \
         rollout status deployment/paperless-operator-paperless-ngx-operator --timeout 3m
 
-# Full tier: minutes, run before a PR and in CI.
+# Full tier: minutes, run before a PR and in CI. 20m budgets for a cold run: the
+# Paperless and PostgreSQL images together are several hundred megabytes, and
+# Paperless's first-start migration runs before its pod is ready.
 e2e: deploy
-    go test ./test/e2e/... -count=1 -timeout 10m
+    go test ./test/e2e/... -count=1 -timeout 20m
 
 sbom:
     syft scan {{image}}:{{tag}} -o spdx-json=operator.sbom.json

@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/p3l1/paperless-ngx-operator/internal/controller"
 	"github.com/p3l1/paperless-ngx-operator/internal/manager"
 	"github.com/p3l1/paperless-ngx-operator/internal/version"
 )
@@ -40,6 +41,15 @@ func main() {
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		log.Error(err, "unable to register readiness check")
+		os.Exit(1)
+	}
+
+	reconciler := &controller.PaperlessInstanceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}
+	if err := reconciler.SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to create controller", "controller", "PaperlessInstance")
 		os.Exit(1)
 	}
 
