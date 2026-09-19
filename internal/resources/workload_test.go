@@ -465,6 +465,56 @@ func TestServiceSelectorMatchesDeploymentPodLabels(t *testing.T) {
 	}
 }
 
+// selectorMatches reports whether every key-value pair in selector is present in
+// labels, the same subset test the Kubernetes API server applies to route a Service
+// to a pod — not full map equality, which is a different, stricter question.
+func selectorMatches(selector, labels map[string]string) bool {
+	for k, v := range selector {
+		if labels[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// Two PaperlessInstances in one namespace is something the API explicitly allows.
+// A selector broad enough to match another instance's pods routes one instance's
+// traffic into another's, which looks like data corruption to the user.
+func TestTwoInstancesInOneNamespaceDoNotCrossSelect(t *testing.T) {
+	a := instance()
+	b := instance()
+	b.Name = "archive"
+
+	deployA, deployB := Deployment(a), Deployment(b)
+	svcA, svcB := Service(a), Service(b)
+	pvcsA, pvcsB := PVCs(a), PVCs(b)
+
+	if deployA.Name == deployB.Name {
+		t.Errorf("Deployment names collide: both %q", deployA.Name)
+	}
+	if svcA.Name == svcB.Name {
+		t.Errorf("Service names collide: both %q", svcA.Name)
+	}
+	for i := range pvcsA {
+		if pvcsA[i].Name == pvcsB[i].Name {
+			t.Errorf("PVC %d names collide: both %q", i, pvcsA[i].Name)
+		}
+	}
+
+	if selectorMatches(svcA.Spec.Selector, deployB.Spec.Template.Labels) {
+		t.Error("instance a's Service selector matches instance b's pods")
+	}
+	if selectorMatches(svcB.Spec.Selector, deployA.Spec.Template.Labels) {
+		t.Error("instance b's Service selector matches instance a's pods")
+	}
+	if !selectorMatches(svcA.Spec.Selector, deployA.Spec.Template.Labels) {
+		t.Error("instance a's Service selector does not match its own pods")
+	}
+	if !selectorMatches(svcB.Spec.Selector, deployB.Spec.Template.Labels) {
+		t.Error("instance b's Service selector does not match its own pods")
+	}
+}
+
 func TestServiceNameNamespaceAndPort(t *testing.T) {
 	inst := instance()
 
