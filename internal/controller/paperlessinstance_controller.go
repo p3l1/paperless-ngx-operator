@@ -6,6 +6,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,12 @@ const fieldOwner = "paperless-ngx-operator"
 // Cluster kind; its presence is how the operator tells whether a managed
 // database can actually be created, without depending on CloudNativePG itself.
 const cnpgCRDName = "clusters.postgresql.cnpg.io"
+
+// notReadyRequeueInterval governs the two "not ready yet" paths that nothing else
+// re-triggers: neither CustomResourceDefinitions nor the deliberately un-cached
+// Secrets are watched, so without an explicit requeue a fix only takes effect hours
+// later, at the informer's own resync.
+const notReadyRequeueInterval = 30 * time.Second
 
 // PaperlessInstanceReconciler reconciles a PaperlessInstance object.
 type PaperlessInstanceReconciler struct {
@@ -64,59 +71,61 @@ func (r *PaperlessInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// set Ready must not leave it missing entirely.
 	SetCondition(&inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "Reconciling", "the operator is reconciling this instance")
 
-	reconcileErr := r.reconcileInstance(ctx, &inst)
+	result, reconcileErr := r.reconcileInstance(ctx, &inst)
 
 	if err := r.patchStatus(ctx, &inst, base); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patching status: %w", err)
 	}
-	return ctrl.Result{}, reconcileErr
+	return result, reconcileErr
 }
 
 // reconcileInstance runs the five ordered steps: secrets, storage, database,
 // cache, then the workload — order matters, since each step's environment can
 // reference an earlier one. A failing step stamps Ready=False, naming it.
-func (r *PaperlessInstanceReconciler) reconcileInstance(ctx context.Context, inst *v1alpha1.PaperlessInstance) error {
+func (r *PaperlessInstanceReconciler) reconcileInstance(ctx context.Context, inst *v1alpha1.PaperlessInstance) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	log.V(1).Info("reconciling secrets")
 	if err := r.reconcileSecrets(ctx, inst); err != nil {
 		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "SecretsNotReady", err.Error())
-		return fmt.Errorf("reconciling secrets: %w", err)
+		return ctrl.Result{}, fmt.Errorf("reconciling secrets: %w", err)
 	}
 
 	log.V(1).Info("reconciling storage")
 	if err := r.reconcileStorage(ctx, inst); err != nil {
 		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "StorageNotReady", err.Error())
-		return fmt.Errorf("reconciling storage: %w", err)
+		return ctrl.Result{}, fmt.Errorf("reconciling storage: %w", err)
 	}
 
 	log.V(1).Info("reconciling database")
 	dbReady, err := r.reconcileDatabase(ctx, inst)
 	if err != nil {
 		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "DatabaseNotReady", err.Error())
-		return fmt.Errorf("reconciling database: %w", err)
+		return ctrl.Result{}, fmt.Errorf("reconciling database: %w", err)
 	}
 	if !dbReady {
 		// Nothing further can come up without a database; report why on Ready
 		// too (DatabaseReady already carries the detail) instead of building a
-		// workload that can only crash-loop.
+		// workload that can only crash-loop. Requeued explicitly: this covers both
+		// CloudNativePG being absent and an external database secret being missing,
+		// neither of which anything else re-triggers reconciliation for.
 		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "DatabaseNotReady",
 			"the instance cannot become ready until its database is; see the DatabaseReady condition")
-		return nil
+		return ctrl.Result{RequeueAfter: notReadyRequeueInterval}, nil
 	}
 
 	log.V(1).Info("reconciling cache")
 	if err := r.reconcileCache(ctx, inst); err != nil {
 		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "CacheNotReady", err.Error())
-		return fmt.Errorf("reconciling cache: %w", err)
+		return ctrl.Result{}, fmt.Errorf("reconciling cache: %w", err)
 	}
 
 	log.V(1).Info("reconciling workload")
 	if err := r.reconcileWorkload(ctx, inst); err != nil {
 		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "WorkloadApplyFailed", err.Error())
-		return fmt.Errorf("reconciling workload: %w", err)
+		return ctrl.Result{}, fmt.Errorf("reconciling workload: %w", err)
 	}
-	return nil
+	return ctrl.Result{}, nil
 }
 
 // patchStatus writes status as a JSON merge patch against base, the instance

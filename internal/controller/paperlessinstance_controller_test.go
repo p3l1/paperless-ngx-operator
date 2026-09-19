@@ -108,6 +108,17 @@ func reconcileOnce(t *testing.T, ctx context.Context, r *PaperlessInstanceReconc
 	}
 }
 
+// reconcileOnceResult is reconcileOnce but also returns the ctrl.Result, for tests
+// asserting on RequeueAfter.
+func reconcileOnceResult(t *testing.T, ctx context.Context, r *PaperlessInstanceReconciler, inst *v1alpha1.PaperlessInstance) ctrl.Result {
+	t.Helper()
+	result, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(inst)})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	return result
+}
+
 // getInto fetches key into obj, failing the test on any error.
 func getInto(t *testing.T, ctx context.Context, c client.Client, key client.ObjectKey, obj client.Object) {
 	t.Helper()
@@ -538,7 +549,14 @@ func TestManagedDatabaseWithoutCNPGStopsBeforeWorkload(t *testing.T) {
 	if err := c.Create(ctx, inst); err != nil {
 		t.Fatalf("creating instance: %v", err)
 	}
-	reconcileOnce(t, ctx, r, inst)
+	result := reconcileOnceResult(t, ctx, r, inst)
+
+	// Nothing watches CustomResourceDefinitions, so without an explicit requeue this
+	// instance would sit stuck until the informer's own resync, hours later.
+	if result.RequeueAfter <= 0 {
+		t.Errorf("RequeueAfter = %s, want a positive interval: CloudNativePG being installed "+
+			"later is never otherwise observed", result.RequeueAfter)
+	}
 
 	var fetched v1alpha1.PaperlessInstance
 	getInto(t, ctx, c, client.ObjectKeyFromObject(inst), &fetched)
@@ -585,7 +603,14 @@ func TestExternalDatabaseSecretMissingStopsBeforeWorkload(t *testing.T) {
 	if err := c.Create(ctx, inst); err != nil {
 		t.Fatalf("creating instance: %v", err)
 	}
-	reconcileOnce(t, ctx, r, inst)
+	result := reconcileOnceResult(t, ctx, r, inst)
+
+	// Secrets are deliberately un-cached and never watched, so without an explicit
+	// requeue this instance would sit stuck until the informer's own resync.
+	if result.RequeueAfter <= 0 {
+		t.Errorf("RequeueAfter = %s, want a positive interval: the secret being created "+
+			"later is never otherwise observed", result.RequeueAfter)
+	}
 
 	var fetched v1alpha1.PaperlessInstance
 	getInto(t, ctx, c, client.ObjectKeyFromObject(inst), &fetched)
