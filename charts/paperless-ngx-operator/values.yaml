@@ -9,7 +9,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 crds:
-  install: true
+  enabled: true
 
 replicaCount: 1
 

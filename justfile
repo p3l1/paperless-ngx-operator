@@ -37,6 +37,17 @@ setup:
 fmt:
     go fmt ./...
 
+# Fails, without rewriting, on files go fmt would otherwise silently reformat.
+fmt-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unformatted=$(gofmt -l .)
+    if [ -n "$unformatted" ]; then
+        echo "not gofmt-ed (run: just fmt):" >&2
+        echo "$unformatted" >&2
+        exit 1
+    fi
+
 vet:
     go vet ./...
 
@@ -46,7 +57,7 @@ lint:
     helm template {{chart}} | kubeconform -strict -summary -
 
 # Fast tier: seconds, run on every change.
-check: fmt vet lint
+check: fmt-check vet lint
     go test ./internal/... ./cmd/...
 
 # Medium tier: envtest against a real API server, no cluster.
@@ -77,7 +88,14 @@ generate:
 verify: generate
     #!/usr/bin/env bash
     set -euo pipefail
-    git diff --exit-code -- config {{chart}}
+    # --exit-code ignores untracked files, so it misses a CRD generated for the
+    # first time; status --porcelain sees new and uncommitted files alike.
+    changes=$(git status --porcelain -- config {{chart}})
+    if [ -n "$changes" ]; then
+        echo "generated output does not match what is committed:" >&2
+        echo "$changes" >&2
+        exit 1
+    fi
     v=$(awk '/^version:/ {print $2; exit}' {{chart}}/Chart.yaml)
     a=$(awk '/^appVersion:/ {gsub(/"/, "", $2); print $2; exit}' {{chart}}/Chart.yaml)
     if [ "$v" != "$a" ]; then
@@ -102,12 +120,17 @@ docker-build:
 
 deploy: docker-build cluster-up
     k3d image import {{image}}:{{tag}} -c {{cluster}}
+    # The image tag never changes, so the pod template needs a per-deploy stamp:
+    # otherwise the Deployment is byte-identical and Kubernetes rolls nothing.
     helm upgrade --install paperless-operator {{chart}} \
         --kube-context k3d-{{cluster}} \
         --namespace paperless-operator-system --create-namespace \
         --set image.repository={{image}} --set image.tag={{tag}} \
         --set image.pullPolicy=IfNotPresent \
+        --set-string podAnnotations.deployedAt="$(date -u +%Y%m%dT%H%M%SZ)" \
         --wait --timeout 3m
+    kubectl --context k3d-{{cluster}} -n paperless-operator-system \
+        rollout status deployment/paperless-operator-paperless-ngx-operator --timeout 3m
 
 # Full tier: minutes, run before a PR and in CI.
 e2e: deploy
