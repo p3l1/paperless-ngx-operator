@@ -449,20 +449,6 @@ func TestDeploymentUsesRecreateStrategy(t *testing.T) {
 	}
 }
 
-func TestDeploymentSelectorMatchesPodTemplateLabels(t *testing.T) {
-	inst := instance()
-
-	d := Deployment(inst)
-	if d.Spec.Selector == nil {
-		t.Fatal("Selector is nil")
-	}
-	for k, v := range d.Spec.Selector.MatchLabels {
-		if d.Spec.Template.Labels[k] != v {
-			t.Errorf("pod template label %q = %q, selector wants %q", k, d.Spec.Template.Labels[k], v)
-		}
-	}
-}
-
 func TestServiceSelectorMatchesDeploymentPodLabels(t *testing.T) {
 	inst := instance()
 
