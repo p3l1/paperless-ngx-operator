@@ -50,15 +50,15 @@ reconcile, not just on creation.
 
 ## Releasing
 
-Cutting a release is two steps, because release-please can push a tag but, using the default
-`GITHUB_TOKEN`, cannot trigger another workflow from that push:
+Merge the open release-please PR on `main`. That creates the `vX.Y.Z` tag and a GitHub
+Release, and the same job then dispatches the `release` workflow for that tag, which builds
+and pushes the image, chart, SBOM, signatures and provenance.
 
-1. Merge the open release-please PR on `main`. This creates the `vX.Y.Z` tag and a GitHub
-   Release, but builds nothing yet.
-2. Dispatch the `release` workflow for that tag: `Actions` → `release` → `Run workflow`, with
-   the `tag` input set to the tag from step 1 (e.g. `v0.2.0`) — or equivalently
-   `gh workflow run release.yaml -f tag=v0.2.0`. This builds and pushes the image, chart, SBOM,
-   signatures and provenance for that exact tag.
+The dispatch is explicit rather than relying on the tag push, because a tag pushed with the
+default `GITHUB_TOKEN` raises no events and would never start `release` on its own;
+`workflow_dispatch` through the API is the documented exception. The workflow also still
+accepts a manual run — `Actions` → `release` → `Run workflow`, or
+`gh workflow run release.yaml -f tag=v0.2.0` — for re-publishing an existing tag.
 
 ## Development
 
