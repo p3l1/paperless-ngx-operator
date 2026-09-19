@@ -19,6 +19,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -44,7 +46,17 @@ const (
 	instanceReadyTimeout = 9 * time.Minute
 	workloadGoneTimeout  = 3 * time.Minute
 	portForwardTimeout   = 30 * time.Second
+
+	// statefulResourcesTimeout bounds both waiting for a fresh instance's PVCs,
+	// CNPG cluster and generated secrets to be created, and waiting for a
+	// deleted instance's to be garbage-collected. Neither needs the pod
+	// scheduling and image pulls instanceReadyTimeout budgets for.
+	statefulResourcesTimeout = 2 * time.Minute
 )
+
+// cnpgClusterGVK identifies CloudNativePG's Cluster kind, matching the
+// unexported constants the operator itself builds resources.CNPGCluster from.
+var cnpgClusterGVK = schema.GroupVersionKind{Group: "postgresql.cnpg.io", Version: "v1", Kind: "Cluster"}
 
 // terminalPodImageReasons are container wait/crash reasons that will never
 // resolve by waiting longer, so a pod stuck in one of them fails the test
@@ -238,36 +250,121 @@ func assertServesLoginPage(t *testing.T, ctx context.Context, c client.Client, c
 	t.Logf("GET / -> %d, %d bytes of HTML (final URL after redirects: %s)", resp.StatusCode, len(body), resp.Request.URL)
 }
 
-// assertDeleteLeavesSecretKeyBehind deletes inst and confirms its owned
-// workload is garbage-collected while the generated secret-key Secret, which
-// carries no owner reference, survives — the property that lets an instance be
-// recreated over the same volumes without inventing a new Django secret key.
-func assertDeleteLeavesSecretKeyBehind(t *testing.T, ctx context.Context, c client.Client, inst *v1alpha1.PaperlessInstance) {
+// statefulResource names one object spec.deletionPolicy governs, paired with a
+// constructor for the (possibly unstructured) type Get needs.
+type statefulResource struct {
+	description string
+	key         types.NamespacedName
+	newObject   func() client.Object
+}
+
+// statefulResources lists inst's four PVCs, its CNPG cluster and its two
+// generated secrets — the resources spec.deletionPolicy governs (see
+// PaperlessInstanceSpec.DeletionPolicy's doc). The Deployment and Service are
+// deliberately absent: they are always owned and so never part of this list.
+func statefulResources(inst *v1alpha1.PaperlessInstance) []statefulResource {
+	ns := inst.Namespace
+	newPVC := func() client.Object { return &corev1.PersistentVolumeClaim{} }
+	newSecret := func() client.Object { return &corev1.Secret{} }
+	newCluster := func() client.Object {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(cnpgClusterGVK)
+		return u
+	}
+
+	return []statefulResource{
+		{"data PVC", types.NamespacedName{Namespace: ns, Name: resources.DataPVCName(inst)}, newPVC},
+		{"media PVC", types.NamespacedName{Namespace: ns, Name: resources.MediaPVCName(inst)}, newPVC},
+		{"consume PVC", types.NamespacedName{Namespace: ns, Name: resources.ConsumePVCName(inst)}, newPVC},
+		{"export PVC", types.NamespacedName{Namespace: ns, Name: resources.ExportPVCName(inst)}, newPVC},
+		{"CNPG cluster", types.NamespacedName{Namespace: ns, Name: resources.DBName(inst)}, newCluster},
+		{"secret-key Secret", types.NamespacedName{Namespace: ns, Name: resources.SecretKeyName(inst)}, newSecret},
+		{"admin Secret", types.NamespacedName{Namespace: ns, Name: resources.AdminSecretName(inst)}, newSecret},
+	}
+}
+
+// waitForStatefulResourcesCreated polls until every one of inst's stateful
+// resources exists, so a deletion assertion that follows acts on an instance
+// whose first few reconciles have actually run rather than an empty namespace.
+func waitForStatefulResourcesCreated(t *testing.T, ctx context.Context, c client.Client, inst *v1alpha1.PaperlessInstance) {
+	t.Helper()
+	eachPoll(t, statefulResourcesTimeout, func() error {
+		for _, res := range statefulResources(inst) {
+			if err := c.Get(ctx, res.key, res.newObject()); err != nil {
+				return fmt.Errorf("%s %s: %w", res.description, res.key, err)
+			}
+		}
+		return nil
+	})
+}
+
+// waitForWorkloadGone polls until inst's Deployment and Service, always owned
+// regardless of spec.deletionPolicy, are both garbage-collected.
+func waitForWorkloadGone(t *testing.T, ctx context.Context, c client.Client, inst *v1alpha1.PaperlessInstance) {
+	t.Helper()
+	key := types.NamespacedName{Namespace: inst.Namespace, Name: inst.Name}
+	eachPoll(t, workloadGoneTimeout, func() error {
+		if err := c.Get(ctx, key, &appsv1.Deployment{}); !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deployment %s: Get error = %v, want NotFound", key, err)
+		}
+		if err := c.Get(ctx, key, &corev1.Service{}); !apierrors.IsNotFound(err) {
+			return fmt.Errorf("service %s: Get error = %v, want NotFound", key, err)
+		}
+		return nil
+	})
+}
+
+// assertDeleteRetainsStatefulResources deletes inst, created under the default
+// Retain deletion policy, and confirms its reproducible workload (Deployment,
+// Service) is garbage-collected while its stateful resources — PVCs, CNPG
+// cluster and generated secrets — survive with no owner reference. Retention,
+// not deletion, is what now makes recreating an instance over the same volumes
+// possible, and it only holds under DeletionPolicyRetain, the default.
+func assertDeleteRetainsStatefulResources(t *testing.T, ctx context.Context, c client.Client, inst *v1alpha1.PaperlessInstance) {
 	t.Helper()
 
 	if err := c.Delete(ctx, inst); err != nil && !apierrors.IsNotFound(err) {
 		t.Fatalf("deleting instance %s: %v", inst.Name, err)
 	}
 
-	depKey := types.NamespacedName{Namespace: inst.Namespace, Name: inst.Name}
-	eachPoll(t, workloadGoneTimeout, func() error {
-		var dep appsv1.Deployment
-		err := c.Get(ctx, depKey, &dep)
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("deployment %s still exists", depKey)
-	})
+	waitForWorkloadGone(t, ctx, c, inst)
 
-	var secret corev1.Secret
-	secretKey := types.NamespacedName{Namespace: inst.Namespace, Name: resources.SecretKeyName(inst)}
-	if err := c.Get(ctx, secretKey, &secret); err != nil {
-		t.Fatalf("secret-key Secret %s should survive instance deletion, but Get failed: %v", secretKey, err)
+	for _, res := range statefulResources(inst) {
+		if err := c.Get(ctx, res.key, res.newObject()); err != nil {
+			t.Errorf("%s %s should survive instance deletion under the default Retain policy, Get failed: %v",
+				res.description, res.key, err)
+		}
 	}
-	t.Logf("secret-key Secret %s survived instance deletion, as designed", secretKey)
+	t.Log("PVCs, CNPG cluster and generated secrets all survived instance deletion under the default Retain policy, as designed")
+}
+
+// assertDeleteRemovesStatefulResources deletes inst, created under
+// DeletionPolicyDelete, and polls until every stateful resource — not just the
+// always-owned Deployment and Service — is gone too, tolerating the delay the
+// garbage collector needs once the owning instance itself disappears.
+func assertDeleteRemovesStatefulResources(t *testing.T, ctx context.Context, c client.Client, inst *v1alpha1.PaperlessInstance) {
+	t.Helper()
+
+	if err := c.Delete(ctx, inst); err != nil && !apierrors.IsNotFound(err) {
+		t.Fatalf("deleting instance %s: %v", inst.Name, err)
+	}
+
+	waitForWorkloadGone(t, ctx, c, inst)
+
+	eachPoll(t, statefulResourcesTimeout, func() error {
+		for _, res := range statefulResources(inst) {
+			err := c.Get(ctx, res.key, res.newObject())
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("%s %s: %w", res.description, res.key, err)
+			}
+			return fmt.Errorf("%s %s still exists", res.description, res.key)
+		}
+		return nil
+	})
+	t.Log("PVCs, CNPG cluster and generated secrets were all garbage-collected under DeletionPolicyDelete, as designed")
 }
 
 // TestPaperlessInstanceServesHTTP applies the shipped example PaperlessInstance
@@ -300,7 +397,28 @@ func TestPaperlessInstanceServesHTTP(t *testing.T) {
 		t.Fatal("instance did not serve HTTP; skipping the deletion check")
 	}
 
-	t.Run("DeleteLeavesSecretKeyBehind", func(t *testing.T) {
-		assertDeleteLeavesSecretKeyBehind(t, ctx, c, inst)
+	t.Run("DeleteRetainsStatefulResources", func(t *testing.T) {
+		assertDeleteRetainsStatefulResources(t, ctx, c, inst)
 	})
+}
+
+// TestPaperlessInstanceDeletionPolicyDeleteRemovesStatefulResources covers the
+// other half of spec.deletionPolicy: unlike TestPaperlessInstanceServesHTTP,
+// this instance never needs to actually serve — the assertion is about object
+// lifecycle, not application readiness — so it only waits for the operator's
+// first few reconciles to create the stateful resources before deleting.
+func TestPaperlessInstanceDeletionPolicyDeleteRemovesStatefulResources(t *testing.T) {
+	c := newClient(t, v1alpha1.AddToScheme)
+	ctx := context.Background()
+
+	inst := loadExampleInstance(t)
+	inst.Name = "paperless-minimal-delete"
+	inst.Spec.DeletionPolicy = v1alpha1.DeletionPolicyDelete
+	if err := c.Create(ctx, inst); err != nil {
+		t.Fatalf("creating instance %s: %v", inst.Name, err)
+	}
+	t.Cleanup(func() { _ = c.Delete(context.Background(), inst) })
+
+	waitForStatefulResourcesCreated(t, ctx, c, inst)
+	assertDeleteRemovesStatefulResources(t, ctx, c, inst)
 }
