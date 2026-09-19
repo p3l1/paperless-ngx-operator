@@ -41,3 +41,29 @@ func TestImageReferenceDoesNotInventATag(t *testing.T) {
 		t.Errorf("Reference() = %q, want %q (must not fall back to \"latest\")", got, want)
 	}
 }
+
+func TestCacheIsManagedDefaultsTrueWhenUnset(t *testing.T) {
+	if !(CacheSpec{}).IsManaged() {
+		t.Error("IsManaged() = false for an empty spec; managed is the default")
+	}
+}
+
+func TestCacheIsManagedFalseWhenExplicit(t *testing.T) {
+	managed := false
+	if (CacheSpec{Managed: &managed}).IsManaged() {
+		t.Error("IsManaged() = true despite managed: false")
+	}
+}
+
+func TestAdminIsEnabledDefaultsTrueWhenUnset(t *testing.T) {
+	if !(AdminSpec{}).IsEnabled() {
+		t.Error("IsEnabled() = false for an empty spec; enabled is the default")
+	}
+}
+
+func TestAdminIsEnabledFalseWhenExplicit(t *testing.T) {
+	enabled := false
+	if (AdminSpec{Enabled: &enabled}).IsEnabled() {
+		t.Error("IsEnabled() = true despite enabled: false")
+	}
+}

@@ -156,6 +156,9 @@ type CacheSpec struct {
 	URLSecretRef *corev1.SecretKeySelector `json:"urlSecretRef,omitempty"`
 }
 
+// IsManaged reports whether the operator runs its own cache; nil (unset) defaults to true.
+func (c CacheSpec) IsManaged() bool { return c.Managed == nil || *c.Managed }
+
 // AdminSpec controls the local superuser Paperless creates at startup.
 type AdminSpec struct {
 	// +kubebuilder:default=true
@@ -173,6 +176,10 @@ type AdminSpec struct {
 	// +optional
 	PasswordSecretRef *corev1.SecretKeySelector `json:"passwordSecretRef,omitempty"`
 }
+
+// IsEnabled reports whether the operator should ensure a local superuser exists;
+// nil (unset) defaults to true.
+func (a AdminSpec) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
 
 // OCRSpec configures text recognition.
 type OCRSpec struct {
