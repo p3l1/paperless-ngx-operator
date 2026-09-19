@@ -75,8 +75,9 @@ func validateName(name string) error {
 // The returned Secret carries no owner reference. Deleting a PaperlessInstance and
 // recreating it over the same volumes must find the same key, or every existing
 // session breaks — garbage-collecting this Secret with its instance would defeat
-// that on every recreate. Callers must not invoke this more than once per
-// instance lifetime; see the package-level concerns in the task report for why.
+// that on every recreate. For the same reason, callers must generate this value
+// once and read it back on every later reconcile: calling this again after the
+// Secret already exists replaces the key and invalidates every existing session.
 func SecretKey(inst *v1alpha1.PaperlessInstance) (*corev1.Secret, error) {
 	if inst.Spec.SecretKeySecretRef != nil {
 		return nil, nil
