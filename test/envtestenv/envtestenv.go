@@ -17,8 +17,10 @@ import (
 
 // Start boots an API server with the project's CRDs and stops it with the test.
 // addToScheme registers extra API types (e.g. a CRD) on top of the built-in client-go
-// scheme for callers that need them.
-func Start(t *testing.T, addToScheme ...func(*runtime.Scheme) error) (client.Client, context.Context) {
+// scheme for callers that need them. The returned client is WithWatch (a superset of
+// Client) so callers that need to wrap it (e.g. with an interceptor) can, without
+// this signature having to change later.
+func Start(t *testing.T, addToScheme ...func(*runtime.Scheme) error) (client.WithWatch, context.Context) {
 	t.Helper()
 
 	env := &envtest.Environment{
@@ -46,7 +48,7 @@ func Start(t *testing.T, addToScheme ...func(*runtime.Scheme) error) (client.Cli
 		}
 	}
 
-	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	c, err := client.NewWithWatch(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		t.Fatalf("building client: %v", err)
 	}
