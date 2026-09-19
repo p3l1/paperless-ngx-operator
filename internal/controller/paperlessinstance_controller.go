@@ -51,7 +51,10 @@ type PaperlessInstanceReconciler struct {
 // +kubebuilder:rbac:groups=paperless.p3l1.de,resources=paperlessinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=paperless.p3l1.de,resources=paperlessinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=services;secrets;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=services;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// Secrets carry no list/watch: the reconciler only ever Gets two by name, and the
+// Secret cache is explicitly disabled (see manager.ControllerOptions).
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
