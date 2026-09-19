@@ -169,6 +169,13 @@ jobs:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+      # cosign reads the docker config; helm registry login writes its own, so
+      # signing the pushed chart needs this login as well as helm's.
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Package and push
         id: push
         run: |
