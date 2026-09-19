@@ -3,10 +3,25 @@
 package resources
 
 import (
+	"reflect"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/p3l1/paperless-ngx-operator/api/v1alpha1"
 )
+
+// wantValkeyLabels is the literal label set ValkeyDeployment and ValkeyService are
+// expected to stamp on their selector and pod template for inst.
+func wantValkeyLabels(inst *v1alpha1.PaperlessInstance) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/name":       "paperless-ngx",
+		"app.kubernetes.io/instance":   inst.Name,
+		"app.kubernetes.io/managed-by": "paperless-ngx-operator",
+		"app.kubernetes.io/component":  "cache",
+	}
+}
 
 func TestValkeyResourcesBuiltWhenManagedIsUnset(t *testing.T) {
 	inst := instance() // spec.cache.managed is nil, which IsManaged() treats as true
@@ -96,13 +111,22 @@ func TestValkeyDeploymentShape(t *testing.T) {
 
 	// The Deployment's pod selector must match the pods it creates, or the API server
 	// rejects it and, if it somehow slipped through, the Deployment would never go Ready.
-	if d.Spec.Selector == nil {
-		t.Fatal("Selector is nil")
+	want := wantValkeyLabels(inst)
+	if d.Spec.Selector == nil || !reflect.DeepEqual(d.Spec.Selector.MatchLabels, want) {
+		t.Errorf("Selector.MatchLabels = %v, want %v", d.Spec.Selector, want)
 	}
-	for k, v := range d.Spec.Selector.MatchLabels {
-		if d.Spec.Template.Labels[k] != v {
-			t.Errorf("pod template label %q = %q, selector wants %q", k, d.Spec.Template.Labels[k], v)
-		}
+	if !reflect.DeepEqual(d.Spec.Template.Labels, want) {
+		t.Errorf("Template.Labels = %v, want %v", d.Spec.Template.Labels, want)
+	}
+}
+
+// A RollingUpdate default would try to start a second pod before the first releases
+// the ReadWriteOnce cache volume, deadlocking every rollout.
+func TestValkeyDeploymentUsesRecreateStrategy(t *testing.T) {
+	inst := instance()
+
+	if got, want := ValkeyDeployment(inst).Spec.Strategy.Type, appsv1.RecreateDeploymentStrategyType; got != want {
+		t.Errorf("strategy = %q, want %q", got, want)
 	}
 }
 
@@ -120,11 +144,9 @@ func TestValkeyServiceShape(t *testing.T) {
 		t.Errorf("service ports = %+v, want a single 6379", s.Spec.Ports)
 	}
 
-	d := ValkeyDeployment(inst)
-	for k, v := range s.Spec.Selector {
-		if d.Spec.Template.Labels[k] != v {
-			t.Errorf("service selector %q = %q, Deployment pod label is %q", k, v, d.Spec.Template.Labels[k])
-		}
+	want := wantValkeyLabels(inst)
+	if !reflect.DeepEqual(s.Spec.Selector, want) {
+		t.Errorf("Selector = %v, want %v", s.Spec.Selector, want)
 	}
 }
 

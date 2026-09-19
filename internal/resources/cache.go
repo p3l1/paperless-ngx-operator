@@ -51,6 +51,11 @@ func ValkeyDeployment(inst *v1alpha1.PaperlessInstance) *appsv1.Deployment {
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &valkeyReplicas,
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			// Recreate, not the Deployment default of RollingUpdate: the cache volume
+			// defaults to ReadWriteOnce, so a second pod cannot start while the first
+			// still holds it and a rolling update would deadlock forever (see the
+			// Paperless Deployment's own Strategy field for the same reasoning).
+			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
