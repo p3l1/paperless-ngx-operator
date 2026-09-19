@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/p3l1/paperless-ngx-operator/compare/v0.2.0...v0.2.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **ci:** authenticate cosign when signing the chart ([2fcaf6b](https://github.com/p3l1/paperless-ngx-operator/commit/2fcaf6b3f3ade8595bafb64999af43bf48324b75))
+* **ci:** make releases publish without manual steps ([c48020d](https://github.com/p3l1/paperless-ngx-operator/commit/c48020d7e6b94d27b4008aa7df40a00223493631))
+
 ## [0.2.0](https://github.com/p3l1/paperless-ngx-operator/compare/paperless-ngx-operator-v0.1.0...paperless-ngx-operator-v0.2.0) (2026-09-19)
 
 
