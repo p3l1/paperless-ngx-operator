@@ -167,9 +167,11 @@ deploy: docker-build cluster-up
     kubectl --context k3d-{{cluster}} -n paperless-operator-system \
         rollout status deployment/paperless-operator-paperless-ngx-operator --timeout 3m
 
-# Full tier: minutes, run before a PR and in CI.
+# Full tier: minutes, run before a PR and in CI. 20m budgets for a cold run: the
+# Paperless and PostgreSQL images together are several hundred megabytes, and
+# Paperless's first-start migration runs before its pod is ready.
 e2e: deploy
-    go test ./test/e2e/... -count=1 -timeout 10m
+    go test ./test/e2e/... -count=1 -timeout 20m
 
 sbom:
     syft scan {{image}}:{{tag}} -o spdx-json=operator.sbom.json

@@ -1,0 +1,22 @@
+# A minimal PaperlessInstance: no storage class (the cluster's default provisioner
+# decides), a single CloudNativePG instance, and volumes small enough for any
+# cluster this operator's e2e suite runs against.
+apiVersion: paperless.p3l1.de/v1alpha1
+kind: PaperlessInstance
+metadata:
+  name: paperless-minimal
+spec:
+  database:
+    cnpg:
+      instances: 1
+      storage:
+        size: 1Gi
+  storage:
+    data:
+      size: 1Gi
+    media:
+      size: 2Gi
+    consume:
+      size: 1Gi
+    export:
+      size: 1Gi
