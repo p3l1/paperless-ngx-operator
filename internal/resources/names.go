@@ -7,12 +7,9 @@ package resources
 
 import "github.com/p3l1/paperless-ngx-operator/api/v1alpha1"
 
-// derivedName appends suffix to the instance name. Kubernetes caps every object
-// name at 253 characters (RFC 1123 subdomain), a limit the instance's own name
-// already satisfies on its own but a suffixed derived name can still exceed. A
-// bare string has no channel to report that, so callers with an error return
-// (SecretKey, AdminSecret) validate the result themselves; callers without one
-// rely on the API server to reject an invalid name at apply time.
+// derivedName appends suffix to the instance name. Length is not validated here:
+// SecretKey and AdminSecret check their own result; other builders rely on the
+// API server to reject a name that is too long.
 func derivedName(inst *v1alpha1.PaperlessInstance, suffix string) string {
 	return inst.Name + "-" + suffix
 }

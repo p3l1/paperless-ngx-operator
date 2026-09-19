@@ -15,9 +15,8 @@ import (
 )
 
 // randomKeyAlphabet is the 64-character base64 URL alphabet without padding: safe
-// for shells and environment-variable delivery (no whitespace, no metacharacters),
-// and a power of two, so masking a random byte's low 6 bits picks uniformly from
-// it with no modulo bias.
+// for shells and env vars, and a power of two so masking a random byte's low 6
+// bits picks uniformly from it with no modulo bias.
 const randomKeyAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 // secretKeyLength matches Django's own get_random_secret_key(), the length
@@ -44,10 +43,7 @@ func RandomKey(n int) (string, error) {
 }
 
 // commonLabels returns the recommended Kubernetes labels identifying an object of
-// the given component as belonging to inst. Generated secrets carry no owner
-// reference (see SecretKey and AdminSecret), so these labels are what makes them
-// discoverable as the instance's, e.g. via `kubectl get secrets -l
-// app.kubernetes.io/instance=<name>`.
+// the given component as belonging to inst.
 func commonLabels(inst *v1alpha1.PaperlessInstance, component string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "paperless-ngx",
@@ -67,17 +63,13 @@ func validateName(name string) error {
 	return nil
 }
 
-// SecretKey returns the Secret holding Django's PAPERLESS_SECRET_KEY, freshly
-// generated on every call. It returns (nil, nil) when spec.secretKeySecretRef is
-// set: the user supplied their own value, which the operator reads and never
-// writes.
+// SecretKey returns the Secret holding Django's PAPERLESS_SECRET_KEY, generated
+// fresh on every call. Returns (nil, nil) when spec.secretKeySecretRef is set: the
+// user supplied their own value, read but never written.
 //
-// The returned Secret carries no owner reference. Deleting a PaperlessInstance and
-// recreating it over the same volumes must find the same key, or every existing
-// session breaks — garbage-collecting this Secret with its instance would defeat
-// that on every recreate. For the same reason, callers must generate this value
-// once and read it back on every later reconcile: calling this again after the
-// Secret already exists replaces the key and invalidates every existing session.
+// Carries no owner reference: an instance recreated over the same volumes must find
+// the same key. Generate once and read it back on later reconciles — regenerating
+// replaces the key and invalidates every session.
 func SecretKey(inst *v1alpha1.PaperlessInstance) (*corev1.Secret, error) {
 	if inst.Spec.SecretKeySecretRef != nil {
 		return nil, nil
@@ -106,10 +98,8 @@ func SecretKey(inst *v1alpha1.PaperlessInstance) (*corev1.Secret, error) {
 }
 
 // AdminSecret returns the Secret holding the local superuser's username and
-// password, freshly generated on every call. It returns (nil, nil) when the admin
-// account is disabled (spec.admin.enabled: false — no account, nothing to store)
-// or when spec.admin.passwordSecretRef is set (the user supplied their own
-// password, read and never written).
+// password, generated fresh on every call. Returns (nil, nil) when the admin
+// account is disabled or spec.admin.passwordSecretRef is set.
 //
 // Like SecretKey, this Secret carries no owner reference: regenerating the
 // password on every instance recreate would lock the user out of their own

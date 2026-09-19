@@ -121,11 +121,9 @@ func TestGeneratedSecretsCarryLabels(t *testing.T) {
 	}
 }
 
-// An instance name near Kubernetes' own 253-character object-name ceiling is a
-// valid PaperlessInstance (the API server enforces that limit uniformly), but
-// appending "-secret-key" or "-admin" can push the derived Secret name over it.
-// The builder must reject this with a clear error rather than hand back a Secret
-// object that is doomed to fail at apply time.
+// A 250-character instance name is valid, but appending "-secret-key" or "-admin"
+// pushes the derived Secret name over Kubernetes' 253-character limit. The builder
+// must reject it, not hand back a Secret doomed to fail at apply time.
 func TestSecretBuildersRejectNameTooLong(t *testing.T) {
 	inst := instance()
 	inst.Name = strings.Repeat("a", 250)
