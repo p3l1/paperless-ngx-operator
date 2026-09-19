@@ -16,3 +16,13 @@ dst=$2
 	' "$src"
 	echo '{{- end }}'
 } > "$dst"
+
+# A silent no-op here would ship a CRD helm uninstall deletes along with users'
+# custom resources, so a source CRD missing metadata.annotations fails loudly
+# instead of producing a chart file quietly lacking the annotation.
+if ! grep -q 'helm.sh/resource-policy: keep' "$dst"; then
+	echo "$0: failed to inject helm.sh/resource-policy: keep into $dst" >&2
+	echo "(does $src have a metadata.annotations block from controller-gen crd?)" >&2
+	rm -f "$dst"
+	exit 1
+fi
