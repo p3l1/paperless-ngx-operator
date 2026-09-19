@@ -6,6 +6,7 @@ cluster := "paperless-operator"
 k3s_image := "rancher/k3s:v1.36.4-k3s1"
 envtest_k8s := "1.37.0"
 chart := "charts/paperless-ngx-operator"
+cnpg_version := "1.28.0"
 
 default:
     @just --list
@@ -58,7 +59,7 @@ lint:
 
 # Fast tier: seconds, run on every change.
 check: fmt-check vet lint
-    go test ./internal/... ./cmd/...
+    go test ./api/... ./internal/... ./cmd/...
 
 # Medium tier: envtest against a real API server, no cluster.
 test:
@@ -67,7 +68,13 @@ test:
     # --bin-dir must be absolute: go test runs the binary from the package dir, not
     # here, so a relative "-p path" result would no longer resolve at that point.
     export KUBEBUILDER_ASSETS="$(go tool setup-envtest use {{envtest_k8s}} --bin-dir {{justfile_directory()}}/.envtest -p path)"
-    go test ./test/envtest/... -count=1
+    pkgs="./test/envtest/..."
+    # internal/controller lands with the first reconciler; go test errors on a
+    # package path that does not exist yet, so only add it once it does.
+    if [ -d internal/controller ]; then
+        pkgs="$pkgs ./internal/controller/..."
+    fi
+    go test $pkgs -count=1
 
 build:
     go build -ldflags "-s -w -X github.com/p3l1/paperless-ngx-operator/internal/version.Version={{tag}} -X github.com/p3l1/paperless-ngx-operator/internal/version.Commit=$(git rev-parse --short HEAD)" -o bin/manager ./cmd
@@ -111,6 +118,12 @@ cluster-up:
         k3d cluster create {{cluster}} --image {{k3s_image}} --agents 0 --wait
     fi
     kubectl --context k3d-{{cluster}} cluster-info
+    if ! kubectl --context k3d-{{cluster}} get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+        kubectl --context k3d-{{cluster}} apply --server-side -f \
+            "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-{{cnpg_version}}.yaml"
+        kubectl --context k3d-{{cluster}} -n cnpg-system wait --for=condition=Available \
+            deployment/cnpg-controller-manager --timeout 3m
+    fi
 
 cluster-down:
     k3d cluster delete {{cluster}} || true

@@ -25,9 +25,12 @@ CI runs:
 - `charts/paperless-ngx-operator/` — the chart users install. Generated CRDs land in
   `templates/crds/` via `just generate`.
 - `test/envtest/`, `test/e2e/` — the medium and full verification tiers.
+- `test/envtestenv/` — the importable envtest harness (`Start`). Controller tests live
+  beside their controller under `internal/controller/` and run in the medium tier
+  (`just test`), calling this package rather than duplicating it.
 
-`api/v1alpha1/` (CRD types), `internal/controller/` (reconcilers) and `internal/resources/`
-(object builders) do not exist yet; slice 1 adds them once the first custom resource lands.
+`internal/controller/` (reconcilers) and `internal/resources/` (object builders) do not
+exist yet; slice 1 adds them once the first controller lands.
 
 ## Conventions
 
