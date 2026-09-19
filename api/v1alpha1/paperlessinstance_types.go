@@ -135,14 +135,25 @@ type DatabaseSpec struct {
 func (d DatabaseSpec) IsExternal() bool { return d.External != nil }
 
 // CacheSpec selects between a managed Valkey and an external Redis-compatible cache.
+// Setting URL or URLSecretRef while Managed is true (or unset) is rejected, since the
+// operator would silently ignore them; setting neither while Managed is false is
+// rejected too, since Paperless cannot start without a cache.
+// +kubebuilder:validation:XValidation:rule="(!has(self.managed) || self.managed) ? (!has(self.url) && !has(self.urlSecretRef)) : ((has(self.url) && self.url != \"\") || has(self.urlSecretRef))",message="set cache.url or cache.urlSecretRef when cache.managed is false; leave both unset when the operator manages the cache"
 type CacheSpec struct {
 	// +kubebuilder:default=true
 	// +optional
 	Managed *bool `json:"managed,omitempty"`
 
-	// URL is used when Managed is false, e.g. redis://cache:6379.
+	// URL is used when Managed is false and URLSecretRef is unset, e.g.
+	// redis://cache:6379. Prefer URLSecretRef when the URL carries a password:
+	// this field is stored as plain text.
 	// +optional
 	URL string `json:"url,omitempty"`
+
+	// URLSecretRef supplies the cache URL from a Secret key, used when Managed is
+	// false. Preferred over URL whenever the connection string carries a credential.
+	// +optional
+	URLSecretRef *corev1.SecretKeySelector `json:"urlSecretRef,omitempty"`
 }
 
 // AdminSpec controls the local superuser Paperless creates at startup.
