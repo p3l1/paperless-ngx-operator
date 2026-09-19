@@ -32,7 +32,9 @@ type ImageSpec struct {
 	// +optional
 	Tag string `json:"tag,omitempty"`
 
-	// Digest pins an exact image and takes precedence over Tag.
+	// Digest pins an exact image, in the form "sha256:<64 hex characters>", and
+	// takes precedence over Tag.
+	// +kubebuilder:validation:Pattern="^sha256:[0-9a-f]{64}$"
 	// +optional
 	Digest string `json:"digest,omitempty"`
 
@@ -95,6 +97,8 @@ type ExternalDatabase struct {
 	Host string `json:"host"`
 
 	// +kubebuilder:default=5432
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
 	// +optional
 	Port int32 `json:"port,omitempty"`
 
@@ -194,7 +198,9 @@ type PaperlessInstanceSpec struct {
 	// +optional
 	Image ImageSpec `json:"image,omitempty"`
 
-	// URL is the external address Paperless builds links and callbacks from.
+	// URL is the external address Paperless builds links and callbacks from, e.g.
+	// https://paperless.example.org.
+	// +kubebuilder:validation:Pattern="^https?://"
 	// +optional
 	URL string `json:"url,omitempty"`
 
