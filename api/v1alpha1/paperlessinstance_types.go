@@ -38,10 +38,13 @@ type ImageSpec struct {
 	// +optional
 	Digest string `json:"digest,omitempty"`
 
+	// PullPolicy controls when the kubelet re-pulls the image; the default only
+	// pulls when it is not already present on the node.
 	// +kubebuilder:default="IfNotPresent"
 	// +optional
 	PullPolicy corev1.PullPolicy `json:"pullPolicy,omitempty"`
 
+	// PullSecrets authenticate image pulls from a private registry.
 	// +optional
 	PullSecrets []corev1.LocalObjectReference `json:"pullSecrets,omitempty"`
 }
@@ -61,6 +64,7 @@ func (i ImageSpec) Reference() string {
 
 // VolumeSpec describes one persistent volume claim.
 type VolumeSpec struct {
+	// Size is the storage capacity requested for the claim.
 	// +optional
 	Size resource.Quantity `json:"size,omitempty"`
 
@@ -69,6 +73,7 @@ type VolumeSpec struct {
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 
+	// AccessModes the claim requests; the storage class's default applies when unset.
 	// +optional
 	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
 }
@@ -93,15 +98,19 @@ type StorageSpec struct {
 
 // ExternalDatabase points at a PostgreSQL the operator does not manage.
 type ExternalDatabase struct {
+	// Host is the PostgreSQL server's DNS name or IP address.
 	// +kubebuilder:validation:Required
 	Host string `json:"host"`
 
+	// Port the PostgreSQL server listens on.
 	// +kubebuilder:default=5432
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	// +optional
 	Port int32 `json:"port,omitempty"`
 
+	// Name of the database to connect to inside the PostgreSQL server. This is a
+	// database name, not a Kubernetes object name.
 	// +kubebuilder:default="paperless"
 	// +optional
 	Name string `json:"name,omitempty"`
@@ -113,11 +122,14 @@ type ExternalDatabase struct {
 
 // ManagedDatabase describes a CloudNativePG cluster the operator creates.
 type ManagedDatabase struct {
+	// Instances is the number of PostgreSQL instances CloudNativePG runs for
+	// high availability.
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	Instances int32 `json:"instances,omitempty"`
 
+	// Storage is the PersistentVolumeClaim template CloudNativePG uses for each instance.
 	// +kubebuilder:default={size:"10Gi"}
 	// +optional
 	Storage VolumeSpec `json:"storage,omitempty"`
@@ -128,9 +140,11 @@ type ManagedDatabase struct {
 // instance should actually use.
 // +kubebuilder:validation:XValidation:rule="!(has(self.cnpg) && has(self.external))",message="set either database.cnpg or database.external, not both"
 type DatabaseSpec struct {
+	// CNPG configures the CloudNativePG cluster the operator creates and manages.
 	// +optional
 	CNPG *ManagedDatabase `json:"cnpg,omitempty"`
 
+	// External points at a PostgreSQL database the operator does not manage.
 	// +optional
 	External *ExternalDatabase `json:"external,omitempty"`
 }
@@ -144,6 +158,8 @@ func (d DatabaseSpec) IsExternal() bool { return d.External != nil }
 // rejected too, since Paperless cannot start without a cache.
 // +kubebuilder:validation:XValidation:rule="(!has(self.managed) || self.managed) ? (!has(self.url) && !has(self.urlSecretRef)) : ((has(self.url) && self.url != \"\") || has(self.urlSecretRef))",message="set cache.url or cache.urlSecretRef when cache.managed is false; leave both unset when the operator manages the cache"
 type CacheSpec struct {
+	// Managed selects whether the operator runs its own Valkey instance. Set this
+	// to false and supply URL or URLSecretRef to use an external Redis-compatible cache.
 	// +kubebuilder:default=true
 	// +optional
 	Managed *bool `json:"managed,omitempty"`
@@ -163,16 +179,21 @@ type CacheSpec struct {
 // IsManaged reports whether the operator runs its own cache; nil (unset) defaults to true.
 func (c CacheSpec) IsManaged() bool { return c.Managed == nil || *c.Managed }
 
-// AdminSpec controls the local superuser Paperless creates at startup.
+// AdminSpec controls the local superuser Paperless creates at startup. Set Enabled
+// to false for an installation where authentication is delegated entirely to an
+// OIDC provider and no local superuser account should exist.
 type AdminSpec struct {
+	// Enabled controls whether the operator ensures a local superuser account exists.
 	// +kubebuilder:default=true
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
 
+	// Username of the local superuser account.
 	// +kubebuilder:default="admin"
 	// +optional
 	Username string `json:"username,omitempty"`
 
+	// Email address recorded on the superuser account.
 	// +optional
 	Email string `json:"email,omitempty"`
 
@@ -187,6 +208,9 @@ func (a AdminSpec) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
 
 // OCRSpec configures text recognition.
 type OCRSpec struct {
+	// Languages are Tesseract language codes (e.g. "eng", "deu") to recognise text
+	// in. Each one must already be installed in the image; an unavailable code
+	// degrades OCR silently rather than failing.
 	// +kubebuilder:default={"eng"}
 	// +optional
 	Languages []string `json:"languages,omitempty"`
@@ -194,6 +218,7 @@ type OCRSpec struct {
 
 // PaperlessInstanceSpec describes one Paperless-NGX installation.
 type PaperlessInstanceSpec struct {
+	// Image selects the Paperless-NGX container image.
 	// +kubebuilder:default={}
 	// +optional
 	Image ImageSpec `json:"image,omitempty"`
@@ -204,6 +229,8 @@ type PaperlessInstanceSpec struct {
 	// +optional
 	URL string `json:"url,omitempty"`
 
+	// Timezone is an IANA tz database name, e.g. "Europe/Berlin", that Paperless
+	// uses to display and file dates.
 	// +kubebuilder:default="UTC"
 	// +optional
 	Timezone string `json:"timezone,omitempty"`
@@ -220,17 +247,23 @@ type PaperlessInstanceSpec struct {
 	// +optional
 	SecretKeySecretRef *corev1.SecretKeySelector `json:"secretKeySecretRef,omitempty"`
 
+	// Database selects between a managed CloudNativePG cluster and an external
+	// PostgreSQL server.
 	// +optional
 	Database DatabaseSpec `json:"database,omitempty"`
 
+	// Cache selects between a managed Valkey instance and an external
+	// Redis-compatible cache.
 	// +kubebuilder:default={}
 	// +optional
 	Cache CacheSpec `json:"cache,omitempty"`
 
+	// Storage configures the four PersistentVolumeClaims Paperless uses.
 	// +kubebuilder:default={}
 	// +optional
 	Storage StorageSpec `json:"storage,omitempty"`
 
+	// Resources applied to the Paperless container.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
@@ -238,6 +271,8 @@ type PaperlessInstanceSpec struct {
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
 
+	// EnvFrom loads environment variables in bulk from ConfigMaps or Secrets. Env
+	// entries take precedence over an EnvFrom entry of the same name.
 	// +optional
 	EnvFrom []corev1.EnvFromSource `json:"envFrom,omitempty"`
 }
@@ -254,6 +289,8 @@ type PaperlessInstanceStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
+	// ObservedGeneration is the metadata.generation the conditions above were
+	// last computed from.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
@@ -290,7 +327,9 @@ type PaperlessInstance struct {
 type PaperlessInstanceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []PaperlessInstance `json:"items"`
+
+	// Items is the list of PaperlessInstance resources returned by this request.
+	Items []PaperlessInstance `json:"items"`
 }
 
 func init() {
