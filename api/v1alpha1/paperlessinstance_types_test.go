@@ -67,3 +67,23 @@ func TestAdminIsEnabledFalseWhenExplicit(t *testing.T) {
 		t.Error("IsEnabled() = true despite enabled: false")
 	}
 }
+
+func TestDeletionPolicyOrDefaultDefaultsToRetainWhenUnset(t *testing.T) {
+	if got := (PaperlessInstanceSpec{}).DeletionPolicyOrDefault(); got != DeletionPolicyRetain {
+		t.Errorf("DeletionPolicyOrDefault() = %q, want %q", got, DeletionPolicyRetain)
+	}
+}
+
+func TestDeletionPolicyOrDefaultReturnsExplicitDelete(t *testing.T) {
+	spec := PaperlessInstanceSpec{DeletionPolicy: DeletionPolicyDelete}
+	if got := spec.DeletionPolicyOrDefault(); got != DeletionPolicyDelete {
+		t.Errorf("DeletionPolicyOrDefault() = %q, want %q", got, DeletionPolicyDelete)
+	}
+}
+
+func TestDeletionPolicyOrDefaultReturnsExplicitRetain(t *testing.T) {
+	spec := PaperlessInstanceSpec{DeletionPolicy: DeletionPolicyRetain}
+	if got := spec.DeletionPolicyOrDefault(); got != DeletionPolicyRetain {
+		t.Errorf("DeletionPolicyOrDefault() = %q, want %q", got, DeletionPolicyRetain)
+	}
+}

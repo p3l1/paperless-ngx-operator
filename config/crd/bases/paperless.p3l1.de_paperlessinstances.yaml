@@ -236,6 +236,19 @@ spec:
                 x-kubernetes-validations:
                 - message: set either database.cnpg or database.external, not both
                   rule: '!(has(self.cnpg) && has(self.external))'
+              deletionPolicy:
+                default: Retain
+                description: |-
+                  DeletionPolicy controls what becomes of your documents, database and
+                  generated credentials when this PaperlessInstance is deleted. Retain
+                  (the default) leaves them in place: `kubectl delete` on this instance
+                  does not delete your documents, and creating a new instance with the
+                  same name adopts them. Delete removes them together with the instance,
+                  leaving nothing behind to reclaim but nothing left to recover either.
+                enum:
+                - Retain
+                - Delete
+                type: string
               env:
                 description: Env passes any PAPERLESS_* variable the typed fields
                   do not cover.

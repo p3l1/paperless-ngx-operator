@@ -258,6 +258,24 @@ type OCRSpec struct {
 	Languages []string `json:"languages,omitempty"`
 }
 
+// DeletionPolicy governs the resources that hold state a user would mourn
+// losing: the four PersistentVolumeClaims, the CloudNativePG Cluster, and the
+// two generated Secrets. Every other resource this operator manages — the
+// Paperless and Valkey Deployments and Services, and the Valkey cache PVC —
+// is trivially reproducible and always deleted with the instance.
+type DeletionPolicy string
+
+const (
+	// DeletionPolicyRetain leaves documents, the database and generated
+	// credentials behind when the instance is deleted, so a later instance
+	// created with the same name adopts them.
+	DeletionPolicyRetain DeletionPolicy = "Retain"
+
+	// DeletionPolicyDelete removes documents, the database and generated
+	// credentials along with the instance, leaving no orphaned resources.
+	DeletionPolicyDelete DeletionPolicy = "Delete"
+)
+
 // PaperlessInstanceSpec describes one Paperless-NGX installation.
 type PaperlessInstanceSpec struct {
 	// Image selects the Paperless-NGX container image.
@@ -317,6 +335,27 @@ type PaperlessInstanceSpec struct {
 	// entries take precedence over an EnvFrom entry of the same name.
 	// +optional
 	EnvFrom []corev1.EnvFromSource `json:"envFrom,omitempty"`
+
+	// DeletionPolicy controls what becomes of your documents, database and
+	// generated credentials when this PaperlessInstance is deleted. Retain
+	// (the default) leaves them in place: `kubectl delete` on this instance
+	// does not delete your documents, and creating a new instance with the
+	// same name adopts them. Delete removes them together with the instance,
+	// leaving nothing behind to reclaim but nothing left to recover either.
+	// +kubebuilder:validation:Enum=Retain;Delete
+	// +kubebuilder:default=Retain
+	// +optional
+	DeletionPolicy DeletionPolicy `json:"deletionPolicy,omitempty"`
+}
+
+// DeletionPolicyOrDefault returns DeletionPolicy, or DeletionPolicyRetain when
+// unset. Mirrors the kubebuilder default for callers that bypass CRD
+// defaulting, e.g. a bare Go struct built directly in a test.
+func (s PaperlessInstanceSpec) DeletionPolicyOrDefault() DeletionPolicy {
+	if s.DeletionPolicy == "" {
+		return DeletionPolicyRetain
+	}
+	return s.DeletionPolicy
 }
 
 // PaperlessInstanceStatus reports what the operator observes.
