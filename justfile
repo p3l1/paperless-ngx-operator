@@ -61,7 +61,11 @@ lint:
 
 # Fast tier: seconds, run on every change.
 check: fmt-check vet lint
-    go test ./api/... ./internal/... ./cmd/...
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # internal/controller needs a real API server (see `test`); excluded here so
+    # this fast tier never depends on KUBEBUILDER_ASSETS being set.
+    go test $(go list ./api/... ./internal/... ./cmd/... | grep -v '/internal/controller$')
 
 # Medium tier: envtest against a real API server, no cluster.
 test:
