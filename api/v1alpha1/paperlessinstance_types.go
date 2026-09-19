@@ -119,7 +119,10 @@ type ManagedDatabase struct {
 	Storage VolumeSpec `json:"storage,omitempty"`
 }
 
-// DatabaseSpec selects between a managed and an external database.
+// DatabaseSpec selects between a managed and an external database. Setting both
+// CNPG and External is rejected: the operator has no way to tell which one the
+// instance should actually use.
+// +kubebuilder:validation:XValidation:rule="!(has(self.cnpg) && has(self.external))",message="set either database.cnpg or database.external, not both"
 type DatabaseSpec struct {
 	// +optional
 	CNPG *ManagedDatabase `json:"cnpg,omitempty"`
