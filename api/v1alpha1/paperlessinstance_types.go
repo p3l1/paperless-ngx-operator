@@ -16,6 +16,10 @@ const (
 	ConditionDatabaseReady = "DatabaseReady"
 )
 
+// defaultRepository is the image used when spec.image.repository is unset. Kept in
+// sync by hand with the kubebuilder marker below: markers cannot reference Go identifiers.
+const defaultRepository = "ghcr.io/paperless-ngx/paperless-ngx"
+
 // ImageSpec selects the Paperless-NGX container image.
 type ImageSpec struct {
 	// Repository holds the image without tag or digest.
@@ -24,6 +28,7 @@ type ImageSpec struct {
 	Repository string `json:"repository,omitempty"`
 
 	// Tag selects a released version. Ignored when Digest is set.
+	// +kubebuilder:default="3.1.3"
 	// +optional
 	Tag string `json:"tag,omitempty"`
 
@@ -39,20 +44,17 @@ type ImageSpec struct {
 	PullSecrets []corev1.LocalObjectReference `json:"pullSecrets,omitempty"`
 }
 
-// Reference renders the image reference the pod should run.
+// Reference renders the image reference the pod should run. It never invents a tag:
+// an empty Tag with no Digest set yields a reference with an empty tag suffix.
 func (i ImageSpec) Reference() string {
 	repo := i.Repository
 	if repo == "" {
-		repo = "ghcr.io/paperless-ngx/paperless-ngx"
+		repo = defaultRepository
 	}
 	if i.Digest != "" {
 		return repo + "@" + i.Digest
 	}
-	tag := i.Tag
-	if tag == "" {
-		tag = "latest"
-	}
-	return repo + ":" + tag
+	return repo + ":" + i.Tag
 }
 
 // VolumeSpec describes one persistent volume claim.

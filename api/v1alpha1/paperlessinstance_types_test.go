@@ -33,3 +33,11 @@ func TestDatabaseModeDefaultsToManaged(t *testing.T) {
 		t.Error("IsExternal() = true for an empty spec; managed is the default")
 	}
 }
+
+func TestImageReferenceDoesNotInventATag(t *testing.T) {
+	img := ImageSpec{Repository: "example.org/paperless"}
+
+	if got, want := img.Reference(), "example.org/paperless:"; got != want {
+		t.Errorf("Reference() = %q, want %q (must not fall back to \"latest\")", got, want)
+	}
+}
