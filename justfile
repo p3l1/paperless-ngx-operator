@@ -55,7 +55,9 @@ vet:
 lint:
     go tool golangci-lint run ./...
     helm lint {{chart}}
-    helm template {{chart}} | kubeconform -strict -summary -
+    # kubeconform's default schema catalog has no schema for the CRD kind itself
+    # (only for the custom resources it defines), so that kind is skipped here.
+    helm template {{chart}} | kubeconform -strict -summary -skip CustomResourceDefinition -
 
 # Fast tier: seconds, run on every change.
 check: fmt-check vet lint
@@ -89,7 +91,15 @@ generate:
     fi
     go tool controller-gen object:headerFile=hack/boilerplate.go.txt paths=./api/...
     go tool controller-gen crd paths=./api/... output:crd:artifacts:config=config/crd/bases
-    cp config/crd/bases/*.yaml {{chart}}/templates/crds/
+    for f in config/crd/bases/*.yaml; do
+        sh hack/crd-to-template.sh "$f" "{{chart}}/templates/crds/$(basename "$f")"
+    done
+    # internal/controller lands with the first reconciler (see `test`); until then
+    # there are no RBAC markers, and the manager keeps only its static leases rule.
+    if [ -d internal/controller ]; then
+        go tool controller-gen rbac:roleName=manager-role paths=./internal/controller/... output:rbac:artifacts:config=config/rbac
+    fi
+    sh hack/rbac-to-chart.sh config/rbac/role.yaml {{chart}}/templates/rbac.yaml
 
 # Fails when generated output is not committed, or the two chart versions drift.
 verify: generate
