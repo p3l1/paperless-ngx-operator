@@ -57,7 +57,6 @@ func (i ImageSpec) Reference() string {
 
 // VolumeSpec describes one persistent volume claim.
 type VolumeSpec struct {
-	// +kubebuilder:default="5Gi"
 	// +optional
 	Size resource.Quantity `json:"size,omitempty"`
 
@@ -70,14 +69,20 @@ type VolumeSpec struct {
 	AccessModes []corev1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
 }
 
-// StorageSpec groups the four volumes Paperless uses.
+// StorageSpec groups the four volumes Paperless uses. Sizes are set per volume,
+// rather than sharing VolumeSpec's own default, because they legitimately differ:
+// media holds every document and needs far more room than the others.
 type StorageSpec struct {
+	// +kubebuilder:default={size:"5Gi"}
 	// +optional
 	Data VolumeSpec `json:"data,omitempty"`
+	// +kubebuilder:default={size:"20Gi"}
 	// +optional
 	Media VolumeSpec `json:"media,omitempty"`
+	// +kubebuilder:default={size:"5Gi"}
 	// +optional
 	Consume VolumeSpec `json:"consume,omitempty"`
+	// +kubebuilder:default={size:"10Gi"}
 	// +optional
 	Export VolumeSpec `json:"export,omitempty"`
 }
@@ -107,6 +112,7 @@ type ManagedDatabase struct {
 	// +optional
 	Instances int32 `json:"instances,omitempty"`
 
+	// +kubebuilder:default={size:"10Gi"}
 	// +optional
 	Storage VolumeSpec `json:"storage,omitempty"`
 }
@@ -161,6 +167,7 @@ type OCRSpec struct {
 
 // PaperlessInstanceSpec describes one Paperless-NGX installation.
 type PaperlessInstanceSpec struct {
+	// +kubebuilder:default={}
 	// +optional
 	Image ImageSpec `json:"image,omitempty"`
 
@@ -172,9 +179,11 @@ type PaperlessInstanceSpec struct {
 	// +optional
 	Timezone string `json:"timezone,omitempty"`
 
+	// +kubebuilder:default={}
 	// +optional
 	OCR OCRSpec `json:"ocr,omitempty"`
 
+	// +kubebuilder:default={}
 	// +optional
 	Admin AdminSpec `json:"admin,omitempty"`
 
@@ -185,9 +194,11 @@ type PaperlessInstanceSpec struct {
 	// +optional
 	Database DatabaseSpec `json:"database,omitempty"`
 
+	// +kubebuilder:default={}
 	// +optional
 	Cache CacheSpec `json:"cache,omitempty"`
 
+	// +kubebuilder:default={}
 	// +optional
 	Storage StorageSpec `json:"storage,omitempty"`
 
@@ -231,6 +242,8 @@ type PaperlessInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	// +kubebuilder:default={}
+	// +optional
 	Spec   PaperlessInstanceSpec   `json:"spec,omitempty"`
 	Status PaperlessInstanceStatus `json:"status,omitempty"`
 }
