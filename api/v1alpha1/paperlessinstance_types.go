@@ -231,8 +231,15 @@ type PaperlessInstanceSpec struct {
 
 // PaperlessInstanceStatus reports what the operator observes.
 type PaperlessInstanceStatus struct {
+	// Conditions are the operator's most recent observations of the instance's
+	// state, keyed by type so Server-Side Apply merges entries instead of
+	// replacing the whole list.
+	// +patchMergeKey=type
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
