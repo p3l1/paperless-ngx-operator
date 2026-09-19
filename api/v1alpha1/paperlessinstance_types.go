@@ -373,7 +373,3 @@ type PaperlessInstanceList struct {
 	// Items is the list of PaperlessInstance resources returned by this request.
 	Items []PaperlessInstance `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&PaperlessInstance{}, &PaperlessInstanceList{})
-}
