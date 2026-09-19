@@ -151,10 +151,12 @@ func assertControlledBy(t *testing.T, obj client.Object, owner *v1alpha1.Paperle
 }
 
 // TestReconcileCreatesOwnedResourcesAndGeneratedSecrets covers the brief's first
-// scenario: a minimal instance produces the Deployment, Service, four PVCs and both
-// generated secrets, with every one of the former owned by the instance and neither
-// secret owned at all (see resources.SecretKey's doc on why: an instance recreated
-// over the same volumes must find the same key).
+// scenario under the default deletion policy (Retain, spec.deletionPolicy left
+// unset): a minimal instance produces the Deployment, Service, four PVCs and both
+// generated secrets. The Deployment and Service are always reproducible and so
+// always owned; the PVCs and secrets hold state a user would mourn and so carry no
+// owner reference under Retain (see TestDeletionPolicyDeleteOwnsStatefulResources
+// for the same instance under DeletionPolicyDelete).
 func TestReconcileCreatesOwnedResourcesAndGeneratedSecrets(t *testing.T) {
 	r, c, ctx := newReconciler(t)
 
@@ -178,7 +180,10 @@ func TestReconcileCreatesOwnedResourcesAndGeneratedSecrets(t *testing.T) {
 	} {
 		var pvc corev1.PersistentVolumeClaim
 		getInto(t, ctx, c, client.ObjectKey{Namespace: testNamespace, Name: name}, &pvc)
-		assertControlledBy(t, &pvc, &fetched)
+		if refs := pvc.GetOwnerReferences(); len(refs) != 0 {
+			t.Errorf("PVC %s has owner references %+v, want none under the default Retain policy: "+
+				"the document archive must survive the instance being deleted", name, refs)
+		}
 	}
 
 	for _, name := range []string{resources.SecretKeyName(inst), resources.AdminSecretName(inst)} {

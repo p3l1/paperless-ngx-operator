@@ -154,8 +154,9 @@ func (r *PaperlessInstanceReconciler) reconcileSecrets(ctx context.Context, inst
 	return nil
 }
 
-// ensureGeneratedSecret creates the Secret build returns, but only when none
-// by that name exists yet. build regenerates a fresh value on every call, so
+// ensureGeneratedSecret creates the Secret build returns, but only when none by
+// that name exists yet; an existing one has its ownership reconciled instead (see
+// reconcileSecretOwnership). build regenerates a fresh value on every call, so
 // calling it only after a confirmed-absent Get keeps a stored value stable.
 func (r *PaperlessInstanceReconciler) ensureGeneratedSecret(
 	ctx context.Context,
@@ -166,7 +167,7 @@ func (r *PaperlessInstanceReconciler) ensureGeneratedSecret(
 	existing := &corev1.Secret{}
 	err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: inst.Namespace}, existing)
 	if err == nil {
-		return nil
+		return r.reconcileSecretOwnership(ctx, inst, existing)
 	}
 	if !apierrors.IsNotFound(err) {
 		return fmt.Errorf("getting secret %s: %w", name, err)
@@ -180,6 +181,12 @@ func (r *PaperlessInstanceReconciler) ensureGeneratedSecret(
 		return nil
 	}
 
+	if inst.Spec.DeletionPolicyOrDefault() == v1alpha1.DeletionPolicyDelete {
+		if err := controllerutil.SetControllerReference(inst, secret, r.Scheme); err != nil {
+			return fmt.Errorf("setting owner reference: %w", err)
+		}
+	}
+
 	// Create only — never applyOwned/Patch: build's value is fresh random data
 	// every call, so re-applying it would rotate this secret. A stale-cache
 	// false NotFound is survived because Create fails loudly, not silently.
@@ -189,10 +196,11 @@ func (r *PaperlessInstanceReconciler) ensureGeneratedSecret(
 	return nil
 }
 
-// reconcileStorage applies the four PersistentVolumeClaims Paperless needs.
+// reconcileStorage applies the four PersistentVolumeClaims Paperless needs,
+// owned or not per spec.deletionPolicy (see applyStateful).
 func (r *PaperlessInstanceReconciler) reconcileStorage(ctx context.Context, inst *v1alpha1.PaperlessInstance) error {
 	for _, pvc := range resources.PVCs(inst) {
-		if err := r.applyOwned(ctx, inst, pvc); err != nil {
+		if err := r.applyStateful(ctx, inst, pvc); err != nil {
 			return fmt.Errorf("applying PVC %s: %w", pvc.Name, err)
 		}
 	}
@@ -259,7 +267,7 @@ func (r *PaperlessInstanceReconciler) reconcileManagedDatabase(ctx context.Conte
 	if err != nil {
 		return false, fmt.Errorf("building CloudNativePG cluster: %w", err)
 	}
-	if err := r.applyOwned(ctx, inst, cluster); err != nil {
+	if err := r.applyStateful(ctx, inst, cluster); err != nil {
 		return false, fmt.Errorf("applying CloudNativePG cluster: %w", err)
 	}
 
@@ -327,9 +335,10 @@ func (r *PaperlessInstanceReconciler) reconcileWorkload(ctx context.Context, ins
 	return nil
 }
 
-// applyOwned ties obj's lifecycle to inst with a controller owner reference,
-// then Server-Side Applies it. Generated secrets never go through this path:
-// they carry no owner reference by design (see resources.SecretKey).
+// applyOwned unconditionally ties obj's lifecycle to inst with a controller
+// owner reference, then Server-Side Applies it. Used for resources that are
+// always reproducible and so always deleted with the instance, regardless of
+// spec.deletionPolicy; stateful resources go through applyStateful instead.
 func (r *PaperlessInstanceReconciler) applyOwned(ctx context.Context, inst *v1alpha1.PaperlessInstance, obj client.Object) error {
 	if err := controllerutil.SetControllerReference(inst, obj, r.Scheme); err != nil {
 		return fmt.Errorf("setting owner reference: %w", err)
@@ -350,6 +359,10 @@ func (r *PaperlessInstanceReconciler) apply(ctx context.Context, obj client.Obje
 	data, err := k8sjson.Marshal(obj)
 	if err != nil {
 		return fmt.Errorf("encoding %s %s: %w", gvk.Kind, obj.GetName(), err)
+	}
+	data, err = setExplicitOwnerReferences(data, obj.GetOwnerReferences())
+	if err != nil {
+		return fmt.Errorf("normalizing owner references for %s %s: %w", gvk.Kind, obj.GetName(), err)
 	}
 
 	patch := client.RawPatch(types.ApplyPatchType, data)

@@ -67,9 +67,9 @@ func validateName(name string) error {
 // fresh on every call. Returns (nil, nil) when spec.secretKeySecretRef is set: the
 // user supplied their own value, read but never written.
 //
-// Carries no owner reference: an instance recreated over the same volumes must find
-// the same key. Generate once and read it back on later reconciles — regenerating
-// replaces the key and invalidates every session.
+// The reconciler owns this Secret only under spec.deletionPolicy: Delete; under the
+// default Retain it carries no owner reference, so an instance recreated over the
+// same volumes finds the same key. Generate once and read it back either way.
 func SecretKey(inst *v1alpha1.PaperlessInstance) (*corev1.Secret, error) {
 	if inst.Spec.SecretKeySecretRef != nil {
 		return nil, nil
@@ -101,9 +101,8 @@ func SecretKey(inst *v1alpha1.PaperlessInstance) (*corev1.Secret, error) {
 // password, generated fresh on every call. Returns (nil, nil) when the admin
 // account is disabled or spec.admin.passwordSecretRef is set.
 //
-// Like SecretKey, this Secret carries no owner reference: regenerating the
-// password on every instance recreate would lock the user out of their own
-// installation.
+// Like SecretKey, ownership follows spec.deletionPolicy: none under the default
+// Retain, so a recreated instance keeps working without a fresh admin password.
 func AdminSecret(inst *v1alpha1.PaperlessInstance) (*corev1.Secret, error) {
 	if !inst.Spec.Admin.IsEnabled() || inst.Spec.Admin.PasswordSecretRef != nil {
 		return nil, nil
