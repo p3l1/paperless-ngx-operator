@@ -49,6 +49,20 @@ func TestDeploymentEnvIncludesServiceNameInAllowedHosts(t *testing.T) {
 	envAbsent(t, env, "PAPERLESS_CSRF_TRUSTED_ORIGINS")
 }
 
+// This slice ships no Ingress or HTTPRoute, so kubectl port-forward is the only way
+// to reach an instance; a client against that tunnel sends "localhost" or
+// "127.0.0.1" as Host, and Django 400s any Host outside PAPERLESS_ALLOWED_HOSTS.
+func TestDeploymentEnvAllowedHostsIncludesLocalhostForPortForward(t *testing.T) {
+	inst := instance()
+
+	hosts := envValue(t, Deployment(inst).Spec.Template.Spec.Containers[0].Env, "PAPERLESS_ALLOWED_HOSTS")
+	for _, want := range []string{"localhost", "127.0.0.1"} {
+		if !strings.Contains(hosts, want) {
+			t.Errorf("PAPERLESS_ALLOWED_HOSTS = %q, want it to contain %q", hosts, want)
+		}
+	}
+}
+
 func TestDeploymentEnvURLSetsURLCSRFAndAllowedHosts(t *testing.T) {
 	inst := instance()
 	inst.Spec.URL = "https://documents.example.org"
@@ -569,6 +583,7 @@ func TestDeploymentReadinessProbeIsHTTPGetOnRootAtContainerPort(t *testing.T) {
 	if p.HTTPGet.Port.IntValue() != paperlessPort {
 		t.Errorf("ReadinessProbe port = %v, want %d", p.HTTPGet.Port, paperlessPort)
 	}
+	assertProbeHostHeader(t, p, inst.Name)
 }
 
 func TestDeploymentLivenessProbeIsHTTPGetOnRootAtContainerPort(t *testing.T) {
@@ -588,6 +603,23 @@ func TestDeploymentLivenessProbeIsHTTPGetOnRootAtContainerPort(t *testing.T) {
 	if p.HTTPGet.Port.IntValue() != paperlessPort {
 		t.Errorf("LivenessProbe port = %v, want %d", p.HTTPGet.Port, paperlessPort)
 	}
+	assertProbeHostHeader(t, p, inst.Name)
+}
+
+// assertProbeHostHeader fails the test unless p's HTTP GET carries a Host header
+// equal to want. kubelet's httpGet dials the pod IP directly and defaults Host to
+// that IP, which Django rejects as outside PAPERLESS_ALLOWED_HOSTS without this.
+func assertProbeHostHeader(t *testing.T, p *corev1.Probe, want string) {
+	t.Helper()
+	for _, h := range p.HTTPGet.HTTPHeaders {
+		if h.Name == "Host" {
+			if h.Value != want {
+				t.Errorf("probe Host header = %q, want %q", h.Value, want)
+			}
+			return
+		}
+	}
+	t.Error("probe has no Host header override")
 }
 
 // Restarting a container mid-migration is worse than a slow-to-appear Service

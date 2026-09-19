@@ -52,15 +52,16 @@ func workloadLabels(inst *v1alpha1.PaperlessInstance) map[string]string {
 	return commonLabels(inst, "server")
 }
 
-// paperlessProbe is an HTTP GET against "/": Paperless redirects there once serving,
-// and httpGet treats any 2xx/3xx as success. Assumed, not verified against a running
-// image — if a pod never reaches Ready, check this path first.
-func paperlessProbe(initialDelay, period, timeout, failureThreshold int32) *corev1.Probe {
+// paperlessProbe is an HTTP GET against "/". host overrides the Host header: kubelet
+// dials the pod IP directly and defaults Host to that IP, which Django rejects as
+// outside PAPERLESS_ALLOWED_HOSTS, failing every probe with a 400.
+func paperlessProbe(host string, initialDelay, period, timeout, failureThreshold int32) *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
-				Path: "/",
-				Port: intstr.FromInt32(paperlessPort),
+				Path:        "/",
+				Port:        intstr.FromInt32(paperlessPort),
+				HTTPHeaders: []corev1.HTTPHeader{{Name: "Host", Value: host}},
 			},
 		},
 		InitialDelaySeconds: initialDelay,
@@ -83,8 +84,12 @@ func serviceDNSNames(inst *v1alpha1.PaperlessInstance) []string {
 // allowedHosts builds PAPERLESS_ALLOWED_HOSTS. Omitting the Service name here makes
 // Django reject every in-cluster request with a 400, since that name is the Host
 // header such a request arrives with; spec.url's own host is added when set.
+//
+// localhost and 127.0.0.1 are always included: this slice ships no Ingress or
+// HTTPRoute, so kubectl port-forward is the only way to reach an instance at all,
+// and a browser or client against that tunnel sends one of those two as Host.
 func allowedHosts(inst *v1alpha1.PaperlessInstance) string {
-	hosts := serviceDNSNames(inst)
+	hosts := append(serviceDNSNames(inst), "localhost", "127.0.0.1")
 	if inst.Spec.URL != "" {
 		if u, err := url.Parse(inst.Spec.URL); err == nil && u.Hostname() != "" {
 			hosts = append(hosts, u.Hostname())
@@ -265,11 +270,11 @@ func Deployment(inst *v1alpha1.PaperlessInstance) *appsv1.Deployment {
 							Resources:    inst.Spec.Resources,
 							VolumeMounts: paperlessVolumeMounts(inst),
 							ReadinessProbe: paperlessProbe(
-								readinessInitialDelaySeconds, readinessPeriodSeconds,
+								inst.Name, readinessInitialDelaySeconds, readinessPeriodSeconds,
 								readinessTimeoutSeconds, readinessFailureThreshold,
 							),
 							LivenessProbe: paperlessProbe(
-								livenessInitialDelaySeconds, livenessPeriodSeconds,
+								inst.Name, livenessInitialDelaySeconds, livenessPeriodSeconds,
 								livenessTimeoutSeconds, livenessFailureThreshold,
 							),
 						},
