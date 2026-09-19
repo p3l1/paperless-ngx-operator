@@ -2,8 +2,8 @@ apiVersion: v2
 name: paperless-ngx-operator
 description: Kubernetes operator managing the lifecycle of Paperless-NGX instances
 type: application
-version: 0.2.0
-appVersion: 0.2.0
+version: 0.2.1
+appVersion: 0.2.1
 home: https://github.com/p3l1/paperless-ngx-operator
 sources:
   - https://github.com/p3l1/paperless-ngx-operator
