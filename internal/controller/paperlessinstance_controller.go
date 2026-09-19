@@ -49,51 +49,83 @@ type PaperlessInstanceReconciler struct {
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
 
-// Reconcile drives one PaperlessInstance toward the state its spec describes.
-// Order is deliberate: secrets first, since every later step may reference
-// them; then storage; then the database, which the workload's environment
-// depends on; then the cache; then the workload itself.
+// Reconcile drives one PaperlessInstance toward the state its spec describes:
+// secrets, then storage, then database, then cache, then the workload. Status
+// is patched once at the end, reflecting either success or why a step failed.
 func (r *PaperlessInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var inst v1alpha1.PaperlessInstance
 	if err := r.Get(ctx, req.NamespacedName, &inst); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	base := inst.DeepCopy()
 
-	if err := r.reconcileSecrets(ctx, &inst); err != nil {
-		return ctrl.Result{}, fmt.Errorf("reconciling secrets: %w", err)
-	}
-	if err := r.reconcileStorage(ctx, &inst); err != nil {
-		return ctrl.Result{}, fmt.Errorf("reconciling storage: %w", err)
-	}
+	// Seeded before any step runs: every path below overwrites this, but an
+	// absent condition is not "false" — a step added later that forgets to
+	// set Ready must not leave it missing entirely.
+	SetCondition(&inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "Reconciling", "the operator is reconciling this instance")
 
-	dbReady, err := r.reconcileDatabase(ctx, &inst)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("reconciling database: %w", err)
-	}
-	if !dbReady {
-		// Nothing further can come up without a database; report why and stop
-		// here rather than building a workload that can only crash-loop.
-		return ctrl.Result{}, r.updateStatus(ctx, &inst)
-	}
+	reconcileErr := r.reconcileInstance(ctx, &inst)
 
-	if err := r.reconcileCache(ctx, &inst); err != nil {
-		return ctrl.Result{}, fmt.Errorf("reconciling cache: %w", err)
+	if err := r.patchStatus(ctx, &inst, base); err != nil {
+		return ctrl.Result{}, fmt.Errorf("patching status: %w", err)
 	}
-	if err := r.reconcileWorkload(ctx, &inst); err != nil {
-		return ctrl.Result{}, fmt.Errorf("reconciling workload: %w", err)
-	}
-
-	return ctrl.Result{}, r.updateStatus(ctx, &inst)
+	return ctrl.Result{}, reconcileErr
 }
 
-// updateStatus stamps status.observedGeneration and writes the status
-// subresource. A write whose content exactly matches what is already stored
-// is a no-op at the API server, so calling this unconditionally does not
-// disturb an instance's resourceVersion when nothing actually changed.
-func (r *PaperlessInstanceReconciler) updateStatus(ctx context.Context, inst *v1alpha1.PaperlessInstance) error {
+// reconcileInstance runs the five ordered steps: secrets, storage, database,
+// cache, then the workload — order matters, since each step's environment can
+// reference an earlier one. A failing step stamps Ready=False, naming it.
+func (r *PaperlessInstanceReconciler) reconcileInstance(ctx context.Context, inst *v1alpha1.PaperlessInstance) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	log.V(1).Info("reconciling secrets")
+	if err := r.reconcileSecrets(ctx, inst); err != nil {
+		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "SecretsNotReady", err.Error())
+		return fmt.Errorf("reconciling secrets: %w", err)
+	}
+
+	log.V(1).Info("reconciling storage")
+	if err := r.reconcileStorage(ctx, inst); err != nil {
+		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "StorageNotReady", err.Error())
+		return fmt.Errorf("reconciling storage: %w", err)
+	}
+
+	log.V(1).Info("reconciling database")
+	dbReady, err := r.reconcileDatabase(ctx, inst)
+	if err != nil {
+		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "DatabaseNotReady", err.Error())
+		return fmt.Errorf("reconciling database: %w", err)
+	}
+	if !dbReady {
+		// Nothing further can come up without a database; report why on Ready
+		// too (DatabaseReady already carries the detail) instead of building a
+		// workload that can only crash-loop.
+		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "DatabaseNotReady",
+			"the instance cannot become ready until its database is; see the DatabaseReady condition")
+		return nil
+	}
+
+	log.V(1).Info("reconciling cache")
+	if err := r.reconcileCache(ctx, inst); err != nil {
+		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "CacheNotReady", err.Error())
+		return fmt.Errorf("reconciling cache: %w", err)
+	}
+
+	log.V(1).Info("reconciling workload")
+	if err := r.reconcileWorkload(ctx, inst); err != nil {
+		SetCondition(inst, v1alpha1.ConditionReady, metav1.ConditionFalse, "WorkloadApplyFailed", err.Error())
+		return fmt.Errorf("reconciling workload: %w", err)
+	}
+	return nil
+}
+
+// patchStatus writes status as a JSON merge patch against base, the instance
+// as first read. Unlike Status().Update, the patch is not tied to base's
+// resourceVersion, so a stale informer-cache read never causes a conflict.
+func (r *PaperlessInstanceReconciler) patchStatus(ctx context.Context, inst, base *v1alpha1.PaperlessInstance) error {
 	inst.Status.ObservedGeneration = inst.Generation
-	if err := r.Status().Update(ctx, inst); err != nil {
-		return fmt.Errorf("updating status: %w", err)
+	if err := r.Status().Patch(ctx, inst, client.MergeFrom(base)); err != nil {
+		return fmt.Errorf("patching status: %w", err)
 	}
 	return nil
 }
@@ -111,12 +143,8 @@ func (r *PaperlessInstanceReconciler) reconcileSecrets(ctx context.Context, inst
 }
 
 // ensureGeneratedSecret creates the Secret build returns, but only when none
-// by that name exists yet. build (resources.SecretKey or resources.AdminSecret)
-// generates a fresh random value on every call, so calling it only after a Get
-// confirms absence — never on every reconcile — is what keeps the value
-// stable: a value already stored is read back, never regenerated. build itself
-// returns (nil, nil) when the user supplied their own secret reference, in
-// which case there is nothing for the operator to create.
+// by that name exists yet. build regenerates a fresh value on every call, so
+// calling it only after a confirmed-absent Get keeps a stored value stable.
 func (r *PaperlessInstanceReconciler) ensureGeneratedSecret(
 	ctx context.Context,
 	inst *v1alpha1.PaperlessInstance,
@@ -139,6 +167,10 @@ func (r *PaperlessInstanceReconciler) ensureGeneratedSecret(
 	if secret == nil {
 		return nil
 	}
+
+	// Create only — never applyOwned/Patch: build's value is fresh random data
+	// every call, so re-applying it would rotate this secret. A stale-cache
+	// false NotFound is survived because Create fails loudly, not silently.
 	if err := r.Create(ctx, secret); err != nil {
 		return fmt.Errorf("creating secret %s: %w", name, err)
 	}
@@ -156,18 +188,50 @@ func (r *PaperlessInstanceReconciler) reconcileStorage(ctx context.Context, inst
 }
 
 // reconcileDatabase configures the instance's database and reports
-// DatabaseReady. External databases are assumed reachable once configured; a
-// managed database requires CloudNativePG to be installed, checked by looking
-// for its Cluster CustomResourceDefinition rather than importing its API
-// module. The returned bool is false only when the caller must stop before
-// the workload step, because there is no database for it to use yet.
+// DatabaseReady. The bool return is false only when the caller must stop
+// before the workload step, because there is no usable database yet.
 func (r *PaperlessInstanceReconciler) reconcileDatabase(ctx context.Context, inst *v1alpha1.PaperlessInstance) (bool, error) {
-	if inst.Spec.Database.IsExternal() {
-		SetCondition(inst, v1alpha1.ConditionDatabaseReady, metav1.ConditionTrue,
-			"ExternalDatabaseConfigured", "using the externally configured database")
-		return true, nil
+	if ext := inst.Spec.Database.External; ext != nil {
+		return r.reconcileExternalDatabase(ctx, inst, ext)
+	}
+	return r.reconcileManagedDatabase(ctx, inst)
+}
+
+// reconcileExternalDatabase confirms the referenced credentials secret exists
+// and carries the keys resources.DatabaseEnv wires in, so a missing secret or
+// key surfaces on DatabaseReady, not as the Deployment's own opaque error.
+func (r *PaperlessInstanceReconciler) reconcileExternalDatabase(
+	ctx context.Context, inst *v1alpha1.PaperlessInstance, ext *v1alpha1.ExternalDatabase,
+) (bool, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{Name: ext.CredentialsSecretRef.Name, Namespace: inst.Namespace}, secret)
+	if apierrors.IsNotFound(err) {
+		SetCondition(inst, v1alpha1.ConditionDatabaseReady, metav1.ConditionFalse, "ExternalDatabaseSecretMissing",
+			fmt.Sprintf("secret %q referenced by spec.database.external.credentialsSecretRef does not exist", ext.CredentialsSecretRef.Name))
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("getting external database secret: %w", err)
 	}
 
+	for _, key := range []string{"username", "password"} {
+		if _, ok := secret.Data[key]; ok {
+			continue
+		}
+		SetCondition(inst, v1alpha1.ConditionDatabaseReady, metav1.ConditionFalse, "ExternalDatabaseSecretInvalid",
+			fmt.Sprintf("secret %q is missing required key %q", ext.CredentialsSecretRef.Name, key))
+		return false, nil
+	}
+
+	SetCondition(inst, v1alpha1.ConditionDatabaseReady, metav1.ConditionTrue,
+		"ExternalDatabaseConfigured", "using the externally configured database")
+	return true, nil
+}
+
+// reconcileManagedDatabase applies a CloudNativePG Cluster once CloudNativePG
+// itself is confirmed installed, checked by looking for its Cluster
+// CustomResourceDefinition rather than importing its API module.
+func (r *PaperlessInstanceReconciler) reconcileManagedDatabase(ctx context.Context, inst *v1alpha1.PaperlessInstance) (bool, error) {
 	installed, err := r.cnpgInstalled(ctx)
 	if err != nil {
 		return false, fmt.Errorf("checking for CloudNativePG: %w", err)
@@ -284,9 +348,8 @@ func (r *PaperlessInstanceReconciler) apply(ctx context.Context, obj client.Obje
 }
 
 // SetupWithManager registers this reconciler with mgr. The CloudNativePG
-// Cluster kind is deliberately not watched here: starting a watch on a kind
-// that may not exist on the API server would keep the manager from starting
-// at all in a cluster where CloudNativePG is absent.
+// Cluster kind is deliberately not watched: a watch on a kind that may not
+// exist on the API server would keep the manager from starting at all.
 func (r *PaperlessInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.PaperlessInstance{}).
