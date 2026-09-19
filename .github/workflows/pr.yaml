@@ -1,7 +1,10 @@
 name: pr
 
 on:
+  # edited is not a default type, so a corrected PR title would otherwise never
+  # re-run the check that rejected it.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
