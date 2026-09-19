@@ -98,6 +98,14 @@ generate:
     # there are no RBAC markers, and the manager keeps only its static leases rule.
     if [ -d internal/controller ]; then
         go tool controller-gen rbac:roleName=manager-role paths=./internal/controller/... output:rbac:artifacts:config=config/rbac
+        # controller-gen exits 0 and writes nothing when it finds no +kubebuilder:rbac
+        # markers at package level (a common cause: the comment block sits directly
+        # above a func with no blank line, so it is discarded as that func's godoc).
+        if [ ! -s config/rbac/role.yaml ]; then
+            echo "internal/controller exists but controller-gen produced no RBAC rules" >&2
+            echo "(check +kubebuilder:rbac marker placement — see hack/rbac-to-chart.sh)" >&2
+            exit 1
+        fi
     fi
     sh hack/rbac-to-chart.sh config/rbac/role.yaml {{chart}}/templates/rbac.yaml
 
