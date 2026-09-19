@@ -106,15 +106,33 @@ func (v VolumeSpec) SizeOrDefault(fallback string) resource.Quantity {
 // rather than sharing VolumeSpec's own default, because they legitimately differ:
 // media holds every document and needs far more room than the others.
 type StorageSpec struct {
+	// Data holds Paperless's own working state: the search index, the
+	// classification model, and SQLite artefacts if used. Needs a
+	// ReadWriteMany-capable storage class if the Deployment ever runs more than
+	// one replica.
 	// +kubebuilder:default={size:"5Gi"}
 	// +optional
 	Data VolumeSpec `json:"data,omitempty"`
+
+	// Media holds the document archive itself: originals, archived PDFs, and
+	// thumbnails. It grows without bound and is the volume to size deliberately,
+	// since not every storage class supports expanding a claim later. Needs a
+	// ReadWriteMany-capable storage class if the Deployment ever runs more than
+	// one replica.
 	// +kubebuilder:default={size:"20Gi"}
 	// +optional
 	Media VolumeSpec `json:"media,omitempty"`
+
+	// Consume is the watched inbox: documents placed here are picked up for
+	// ingestion and removed once processed. Needs a ReadWriteMany-capable storage
+	// class if the Deployment ever runs more than one replica.
 	// +kubebuilder:default={size:"5Gi"}
 	// +optional
 	Consume VolumeSpec `json:"consume,omitempty"`
+
+	// Export is the destination for document_exporter runs, and doubles as where a
+	// backup lands. Needs a ReadWriteMany-capable storage class if the Deployment
+	// ever runs more than one replica.
 	// +kubebuilder:default={size:"10Gi"}
 	// +optional
 	Export VolumeSpec `json:"export,omitempty"`
